@@ -152,3 +152,11 @@ a.row:hover .row-t { text-decoration: underline; text-underline-offset: 3px; }
 
 /* Handlinger på en opskrift, nederst på siden. */
 .tools { font: 14px var(--sans); color: var(--sub); margin-top: 30px; border-top: 1px solid var(--rule); padding-top: 14px; line-height: 2; }
+
+/* Papirkurven. */
+.foot { margin-top: 36px; font: 13px var(--sans); text-align: center; }
+.foot a { color: var(--sub); }
+.trash-row { padding: 14px 0; border-bottom: 1px solid var(--rule); }
+.trash-row:first-of-type { border-top: 1px solid var(--rule); margin-top: 18px; }
+.trash-actions { font: 14px var(--sans); margin-top: 6px; color: var(--sub); }
+.trash-actions .danger { font-weight: 600; }

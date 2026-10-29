@@ -72,6 +72,23 @@ def create_app(settings: Settings, reader: Reader | None = None) -> FastAPI:
         library.remove_dish_photo(recipe_id)
         return _details(_get(recipe_id))
 
+    @app.delete("/api/opskrifter/{recipe_id}")
+    def trash(recipe_id: str) -> dict[str, str]:
+        return {"papirkurv": library.trash(recipe_id)}
+
+    @app.get("/api/papirkurv")
+    def trashed() -> list[dict[str, str]]:
+        return [{"id": item.id, "titel": item.titel, "slettet": item.slettet.date().isoformat()} for item in library.trashed()]
+
+    @app.post("/api/papirkurv/{trash_id}/hent-tilbage")
+    def restore(trash_id: str) -> dict[str, str]:
+        return {"id": library.restore(trash_id)}
+
+    @app.delete("/api/papirkurv/{trash_id}")
+    def delete_permanently(trash_id: str) -> dict[str, str]:
+        library.delete_permanently(trash_id)
+        return {}
+
     def _get(recipe_id: str) -> Entry:
         entry = library.get(recipe_id)
         if entry is None:

@@ -7,24 +7,27 @@
 <title>Opskrifter</title>
 <!-- Alle URL'er er relative, fordi Ingress serverer appen under en dynamisk sti. -->
 <link rel="stylesheet" href="static/style.css">
-<script src="static/app.js" defer></script>
+<script type="module" src="static/app.js"></script>
 </head>
 <body>
-<main class="page" id="forside">
+<main class="page" id="forside" data-view="forside">
   <header class="mast">
     <div class="kicker" id="kicker">Biblioteket</div>
     <h1>Hvad skal vi lave i dag?</h1>
     <input class="search" type="search" placeholder="Søg efter ret, ingrediens eller kilde …" aria-label="Søg i biblioteket">
   </header>
-  <button class="new" type="button">
+  <button class="new" type="button" id="new-recipe">
     <span class="new-ic" aria-hidden="true">📷</span>
     <span><b>Ny opskrift</b><small>Fotografér en side fra en bog, et kort eller et udklip</small></span>
     <span aria-hidden="true">→</span>
   </button>
+  <div id="notes"></div>
   <nav id="controls" class="controls" aria-label="Sortering og tags"></nav>
   <div id="lib" class="lib" aria-live="polite"></div>
+  <footer class="foot"><a href="#papirkurv">Papirkurv</a></footer>
 </main>
-<article class="page recipe" id="opskrift" hidden></article>
+<article class="page recipe" id="opskrift" data-view="opskrift" hidden></article>
+<section class="page recipe" id="papirkurv" data-view="papirkurv" hidden></section>
 <div class="viewer" id="viewer" hidden></div>
 <div class="toast" id="toast" role="status" hidden></div>
 </body>

@@ -1,13 +1,37 @@
 """Bibliotek: ejer biblioteksmappen og opskrifterne i den."""
 
 import os
+import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from . import recipe_format
 from .recipe_format import Opskrift
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"}
+
+
+TRASH = ".papirkurv"
+DELETED = ".slettet"
+"""Filen i en mappe i papirkurven, der indeholder tidspunktet for sletningen."""
+
+
+def _unique(base: str, taken: Callable[[str], bool]) -> str:
+    """`base`, eller `base-2`, `base-3` … hvis navnet er optaget."""
+    candidate, n = base, 1
+    while taken(candidate):
+        n += 1
+        candidate = f"{base}-{n}"
+    return candidate
+
+
+@dataclass(frozen=True)
+class Trashed:
+    id: str
+    titel: str
+    slettet: datetime
 
 
 class NotFound(Exception):
@@ -98,6 +122,104 @@ class Library:
         if self._read(path).opskrift.advarsel:
             raise HasWarning(recipe_id)
         return path
+
+    # ---------------- Papirkurv ----------------
+    # Hver slettet opskrift har sin egen undermappe i papirkurven med filen og billederne uændret.
+
+    def trash(self, recipe_id: str) -> str:
+        """Flytter opskriften og dens billeder til papirkurven. Det gælder også en fil med advarsel."""
+        path = self._file(f"{recipe_id}.md")
+        if path is None:
+            raise NotFound(recipe_id)
+        files = self._recipe_files(path)
+        trash = self.directory / TRASH
+        folder = trash / _unique(recipe_id, lambda name: (trash / name).exists())
+        folder.mkdir(parents=True)
+        for file in files:
+            os.replace(file, folder / file.name)
+        (folder / DELETED).write_text(datetime.now().isoformat(timespec="seconds"), encoding="utf-8")
+        return folder.name
+
+    def trashed(self) -> list[Trashed]:
+        """Opskrifterne i papirkurven, senest slettet først."""
+        trash = self.directory / TRASH
+        items = []
+        for folder in trash.iterdir() if trash.is_dir() else []:
+            md = self._trashed_file(folder.name)
+            if md is not None:
+                entry = self._read(md)
+                deleted = datetime.fromisoformat((folder / DELETED).read_text(encoding="utf-8").strip())
+                items.append(Trashed(id=folder.name, titel=entry.opskrift.titel or entry.id, slettet=deleted))
+        return sorted(items, key=lambda item: item.slettet, reverse=True)
+
+    def restore(self, trash_id: str) -> str:
+        """Flytter opskriften tilbage. Er navnet optaget, får filen og billederne et nummer bagi."""
+        md = self._trashed_file(trash_id)
+        if md is None:
+            raise NotFound(trash_id)
+        old_id = md.stem
+        new_id = _unique(old_id, self._taken)
+        renamed: dict[str, str] = {}
+        for file in md.parent.iterdir():
+            if file.name == DELETED:
+                continue
+            name = file.name
+            if new_id != old_id and name.startswith(f"{old_id}."):
+                name = new_id + name[len(old_id) :]
+            if (self.directory / name).exists():
+                name = f"{new_id}.{name}"
+            if name != file.name:
+                renamed[file.name] = name
+            os.replace(file, self.directory / name)
+        shutil.rmtree(md.parent)
+        self._rename_images(new_id, renamed)
+        return new_id
+
+    def delete_permanently(self, trash_id: str) -> None:
+        md = self._trashed_file(trash_id)
+        if md is None:
+            raise NotFound(trash_id)
+        shutil.rmtree(md.parent)
+
+    def _trashed_file(self, trash_id: str) -> Path | None:
+        """Markdown-filen i en mappe i papirkurven. Navne, der peger ud af papirkurven, afvises."""
+        folder = self.directory / TRASH / trash_id
+        if folder.name != trash_id or trash_id.startswith(".") or not folder.is_dir():
+            return None
+        return next(folder.glob("*.md"), None)
+
+    def _rename_images(self, recipe_id: str, renamed: dict[str, str]) -> None:
+        """Retter billednavnene i frontmatter efter en omdøbning. En fil med advarsel røres ikke."""
+        path = self.directory / f"{recipe_id}.md"
+        opskrift = self._read(path).opskrift
+        if not renamed or opskrift.advarsel:
+            return
+        text = path.read_bytes().decode("utf-8")
+        if opskrift.retbillede in renamed:
+            text = recipe_format.set_field(text, "retbillede", renamed[opskrift.retbillede])
+        if any(name in renamed for name in opskrift.originalbilleder):
+            names = [renamed.get(name, name) for name in opskrift.originalbilleder]
+            text = recipe_format.set_field(text, "originalbilleder", names)
+        _write(path, text)
+
+    def _recipe_files(self, path: Path) -> list[Path]:
+        """Filen selv og dens billeder: dem, der står i frontmatter, og dem med opskriftens slug som præfiks."""
+        recipe_id = path.stem
+        opskrift = self._read(path).opskrift
+        names = {path.name, *opskrift.originalbilleder, *([opskrift.retbillede] if opskrift.retbillede else [])}
+        # En anden opskrift som `kage.special.md` ejer selv filer med præfikset `kage.special.`.
+        others = [p.stem for p in self.directory.glob(f"{recipe_id}.*.md")]
+        for file in self.directory.iterdir():
+            name = file.name
+            if name.startswith(f"{recipe_id}.") and not name.endswith(".md") and not any(name.startswith(f"{o}.") for o in others):
+                names.add(name)
+        return [found for name in sorted(names) if (found := self._file(name))]
+
+    def _taken(self, recipe_id: str) -> bool:
+        """Om et slug er optaget af en opskrift eller af filer med slugget som præfiks."""
+        return (self.directory / f"{recipe_id}.md").exists() or any(
+            file.name.startswith(f"{recipe_id}.") for file in self.directory.iterdir()
+        )
 
     def image(self, name: str) -> Path | None:
         """Stien til et billede i biblioteksmappen, eller None hvis det ikke findes der."""

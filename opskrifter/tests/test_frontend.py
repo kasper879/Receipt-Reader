@@ -1,6 +1,7 @@
 """Den statiske frontend serveres af samme proces og virker under Ingress' dynamiske sti."""
 
 import re
+from pathlib import PurePosixPath
 
 from fastapi.testclient import TestClient
 
@@ -38,3 +39,19 @@ def test_assets_and_fonts_are_served_without_external_calls(client: TestClient) 
 def test_the_frontend_is_revalidated_after_an_update(client: TestClient) -> None:
     for url in ["/", "static/app.js", "static/style.css"]:
         assert client.get(url).headers["cache-control"] == "no-cache", url
+
+
+def test_javascript_modules_are_served_and_only_import_relatively(client: TestClient) -> None:
+    pending, seen = ["static/app.js"], set()
+    while pending:
+        url = pending.pop()
+        seen.add(url)
+        response = client.get(url)
+        assert response.status_code == 200, url
+        for target in re.findall(r'from\s+"([^"]+)"', response.text):
+            assert target.startswith("./"), (url, target)
+            resolved = str(PurePosixPath(url).parent / target[2:])
+            if resolved not in seen:
+                pending.append(resolved)
+
+    assert len(seen) > 1
