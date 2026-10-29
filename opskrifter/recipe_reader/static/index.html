@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Opskrifter</title>
+<!-- Alle URL'er er relative, fordi Ingress serverer appen under en dynamisk sti. -->
+<link rel="stylesheet" href="static/style.css">
+<script src="static/app.js" defer></script>
+</head>
+<body>
+<main class="page">
+  <header class="mast">
+    <div class="kicker" id="kicker">Biblioteket</div>
+    <h1>Hvad skal vi lave i dag?</h1>
+    <input class="search" type="search" placeholder="Søg efter ret, ingrediens eller kilde …" aria-label="Søg i biblioteket">
+  </header>
+  <button class="new" type="button">
+    <span class="new-ic" aria-hidden="true">📷</span>
+    <span><b>Ny opskrift</b><small>Fotografér en side fra en bog, et kort eller et udklip</small></span>
+    <span aria-hidden="true">→</span>
+  </button>
+  <div id="lib" class="lib" aria-live="polite"></div>
+</main>
+</body>
+</html>

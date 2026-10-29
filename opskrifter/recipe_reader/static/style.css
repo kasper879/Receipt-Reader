@@ -1,0 +1,79 @@
+/* Designretning B "Kogebog". Fontene følger med add-on'en, så der ikke laves eksterne kald. */
+@font-face { font-family: "Fraunces"; font-style: normal; font-weight: 100 900; font-display: swap; src: url("fonts/fraunces-latin-wght-normal.woff2") format("woff2"); }
+@font-face { font-family: "Fraunces"; font-style: italic; font-weight: 100 900; font-display: swap; src: url("fonts/fraunces-latin-wght-italic.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 100 900; font-display: swap; src: url("fonts/inter-latin-wght-normal.woff2") format("woff2"); }
+@font-face { font-family: "Caveat"; font-style: normal; font-weight: 400 700; font-display: swap; src: url("fonts/caveat-latin-wght-normal.woff2") format("woff2"); }
+
+:root {
+  color-scheme: light;
+  --paper: #f6f0e4;
+  --ink: #2a2420;
+  --sub: #7b6f62;
+  --acc: #a4452c;
+  --rule: #ddd0b9;
+  --star: #f5a623;
+  --serif: "Fraunces", Georgia, serif;
+  --sans: "Inter", system-ui, sans-serif;
+  --hand: "Caveat", cursive;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #1d1a17; --ink: #ece4d6; --sub: #a89c8c; --acc: #e58a69; --rule: #3b342c;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #1d1a17; --ink: #ece4d6; --sub: #a89c8c; --acc: #e58a69; --rule: #3b342c;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  -webkit-font-smoothing: antialiased;
+}
+button, input { font: inherit; color: inherit; }
+
+.page { max-width: 760px; margin: 0 auto; padding: 28px 16px 40px; }
+@media (min-width: 500px) { .page { padding-inline: 20px; } }
+
+.kicker { font: 600 11px var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--sub); }
+.mast h1 { font-size: clamp(34px, 8vw, 52px); line-height: 1.02; font-weight: 600; margin: 10px 0 18px; letter-spacing: -.01em; }
+
+.search {
+  width: 100%; border: 0; border-bottom: 2px solid var(--ink); border-radius: 0;
+  background: none; font: 400 20px var(--serif); padding: 8px 0; outline: none;
+}
+.search::placeholder { color: var(--sub); font-style: italic; }
+
+.new {
+  width: 100%; margin: 22px 0 4px; display: flex; align-items: center; gap: 16px; text-align: left;
+  background: var(--ink); color: var(--paper); border: 0; border-radius: 4px; padding: 18px 20px; cursor: pointer;
+}
+.new-ic { font-size: 30px; }
+.new b { display: block; font: 600 22px var(--serif); }
+.new small { display: block; font: 13px var(--sans); opacity: .75; margin-top: 2px; }
+.new > span:last-child { margin-left: auto; font-size: 24px; }
+
+.lib { margin-top: 18px; }
+.row {
+  display: grid; grid-template-columns: 60px 1fr auto; gap: 14px; align-items: center;
+  padding: 12px 0; border-bottom: 1px solid var(--rule);
+}
+.row:first-child { border-top: 1px solid var(--rule); }
+.thumb { width: 60px; height: 60px; border-radius: 3px; overflow: hidden; background: repeating-linear-gradient(45deg, #8881 0 10px, #8882 10px 20px); }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.row-t { font-size: 20px; font-weight: 600; line-height: 1.15; overflow-wrap: anywhere; }
+.row-s { font: 13px var(--sans); color: var(--sub); margin-top: 3px; }
+.row-s i { font-family: var(--serif); }
+.row-r { font-size: 12px; }
+.warn { color: var(--acc); }
+
+.stars { display: inline-flex; gap: 1px; line-height: 1; }
+.stars span { opacity: .22; }
+.stars span.on { opacity: 1; color: var(--star); }
+
+.empty { font-style: italic; color: var(--sub); padding: 24px 0; }
