@@ -16,5 +16,8 @@ map:
     read_only: false
 options:
   biblioteksmappe: /share/opskrifter
+  model: claude-opus-5-5
 schema:
   biblioteksmappe: str
+  api_noegle: password?
+  model: str
