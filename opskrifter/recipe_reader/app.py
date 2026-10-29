@@ -10,9 +10,10 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import images
+from . import images, reading_api, titles
 from .library import Entry, HasWarning, Library, NotFound
 from .reader import Reader, UnconfiguredReader
+from .readings import ReadingNotFound, Readings
 from .search_index import SearchIndex, Sorting
 from .settings import Settings
 
@@ -26,6 +27,15 @@ class RatingBody(BaseModel):
 def create_app(settings: Settings, reader: Reader | None = None) -> FastAPI:
     library = Library(settings.library_dir)
     index = SearchIndex(settings.index_path, library, _summary)
+    readings = Readings(settings.library_dir, reader or UnconfiguredReader())
+
+    def similar_recipes(title: str | None, except_id: str | None) -> list[dict[str, Any]]:
+        """Opskrifter i biblioteket med en titel, der ligner. En fil med advarsel har ingen titel at sammenligne med."""
+        return [
+            {"id": item["id"], "titel": item["titel"], "oprettet": item["oprettet"]}
+            for item in index.search(sorting=Sorting.ALFABETISK)
+            if not item["advarsel"] and item["id"] != except_id and titles.similar(title or "", item["titel"])
+        ]
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -34,7 +44,7 @@ def create_app(settings: Settings, reader: Reader | None = None) -> FastAPI:
         index.close()
 
     app = FastAPI(title="Opskrifter", lifespan=lifespan)
-    app.state.reader = reader or UnconfiguredReader()
+    app.include_router(reading_api.router(readings, library, similar_recipes, _prepared))
 
     @app.middleware("http")
     async def revalidate_frontend(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
@@ -98,6 +108,10 @@ def create_app(settings: Settings, reader: Reader | None = None) -> FastAPI:
     @app.exception_handler(NotFound)
     def not_found(request: Request, error: NotFound) -> JSONResponse:
         return JSONResponse({"detail": "Opskriften findes ikke"}, status_code=404)
+
+    @app.exception_handler(ReadingNotFound)
+    def reading_not_found(request: Request, error: ReadingNotFound) -> JSONResponse:
+        return JSONResponse({"detail": "Aflæsningen eller udkastet findes ikke"}, status_code=404)
 
     @app.exception_handler(HasWarning)
     def has_warning(request: Request, error: HasWarning) -> JSONResponse:

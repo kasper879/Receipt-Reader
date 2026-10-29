@@ -181,6 +181,57 @@ def _quantity(match: re.Match[str]) -> Quantity:
     return int(value) if value.denominator == 1 else float(value)
 
 
+FIELD_ORDER = (
+    "titel", "portioner", "forberedelse", "total", "vurdering", "tags", "kilde", "oprettet", "retbillede", "originalbilleder",
+)  # fmt: skip
+
+
+def write(opskrift: Opskrift) -> str:
+    """Skriver en opskrift som Markdown. At tolke filen igen giver den samme opskrift."""
+    meta: dict[str, object] = {
+        "titel": opskrift.titel,
+        "portioner": opskrift.portioner,
+        "forberedelse": opskrift.forberedelse,
+        "total": opskrift.total,
+        "vurdering": opskrift.vurdering,
+        "tags": opskrift.tags or None,
+        "kilde": opskrift.kilde,
+        "oprettet": opskrift.oprettet,
+        "retbillede": opskrift.retbillede,
+        "originalbilleder": opskrift.originalbilleder or None,
+    }
+    lines = ["---", *(f"{key}: {yaml_value(meta[key])}" for key in FIELD_ORDER if meta[key] is not None), "---", ""]
+    lines += ["## Ingredienser", ""]
+    for group in opskrift.ingredienser:
+        if group.gruppe:
+            lines.append(f"### {group.gruppe}")
+        lines += [f"- {format_ingredient(line)}" for line in group.linjer]
+        lines.append("")
+    lines += ["## Fremgangsmåde", ""]
+    lines += [f"{i}. {step}" for i, step in enumerate(opskrift.trin, start=1)]
+    if opskrift.noter:
+        lines += ["", "## Noter", "", opskrift.noter]
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def format_ingredient(line: Ingredient) -> str:
+    """`[mængde] [enhed] navn`, så linjen tolkes til den samme ingrediens igen."""
+    parts = [format_quantity(line.maengde) if line.maengde is not None else None, line.enhed, line.navn]
+    return " ".join(part for part in parts if part)
+
+
+def format_quantity(value: Quantity) -> str:
+    """Heltal, heltal med unicode-brøk (fx `1½`) eller decimaltal med komma."""
+    whole = int(value)
+    rest = Fraction(value - whole).limit_denominator(8)
+    if rest == 0:
+        return str(whole)
+    glyph = next((char for char, fraction in UNICODE_FRACTIONS.items() if fraction == rest), None)
+    if glyph and abs(float(whole + rest) - value) < 1e-9:
+        return f"{whole or ''}{glyph}"
+    return f"{value:g}".replace(".", ",")
+
+
 def set_field(text: str, key: str, value: object) -> str:
     """Sætter ét felt i frontmatter. None fjerner feltet. Resten af filen er byte for byte uændret."""
     lines = text.splitlines(keepends=True)

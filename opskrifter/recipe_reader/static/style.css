@@ -96,7 +96,7 @@ a.row:hover .row-t { text-decoration: underline; text-underline-offset: 3px; }
 .hero img { display: block; width: 100%; aspect-ratio: 3 / 2; object-fit: cover; }
 .hero figcaption { font: 12px var(--sans); color: var(--sub); padding: 8px 16px; }
 
-.facts { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 2px solid var(--ink); border-bottom: 1px solid var(--rule); margin: 22px 0 28px; }
+.facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 2px solid var(--ink); border-bottom: 1px solid var(--rule); margin: 22px 0 28px; }
 .facts > div { padding: 12px 10px 12px 0; display: grid; gap: 4px; align-content: start; }
 .facts > div + div { padding-left: 12px; border-left: 1px solid var(--rule); }
 .facts span { font: 600 10px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--sub); }
@@ -160,3 +160,73 @@ a.row:hover .row-t { text-decoration: underline; text-underline-offset: 3px; }
 .trash-row:first-of-type { border-top: 1px solid var(--rule); margin-top: 18px; }
 .trash-actions { font: 14px var(--sans); margin-top: 6px; color: var(--sub); }
 .trash-actions .danger { font-weight: 600; }
+
+/* Noter på forsiden: ventende aflæsninger og udkast, der venter på gennemsyn. */
+.note { margin: 20px 0 0; padding: 4px 0 4px 16px; border-left: 3px solid var(--acc); font-style: italic; font-size: 16px; line-height: 1.5; }
+.note a { color: var(--acc); }
+.note-reason { color: var(--sub); }
+.note-discard { font: 13px var(--sans); font-style: normal; }
+
+/* Ny opskrift: valgte billeder, før de sendes til aflæsning. */
+.picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; margin: 18px 0 22px; }
+.pick { position: relative; aspect-ratio: 3 / 4; border-radius: 3px; overflow: hidden; background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.pick img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pick .remove { position: absolute; top: 4px; right: 4px; background: #000a; color: #fff; }
+.add-pick { border: 2px dashed var(--rule); font: 14px var(--sans); color: var(--sub); cursor: pointer; padding: 8px; }
+.reading { display: flex; align-items: center; gap: 12px; margin-top: 18px; font-style: italic; color: var(--sub); }
+.spinner { width: 18px; height: 18px; border: 2px solid var(--rule); border-top-color: var(--acc); border-radius: 50%; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+
+/* Knapper. */
+.save { width: 100%; background: var(--ink); color: var(--paper); border: 0; border-radius: 4px; padding: 16px 20px; font: 600 19px var(--serif); cursor: pointer; }
+.save:disabled { opacity: .5; cursor: default; }
+.secondary { width: 100%; background: none; color: var(--ink); border: 1px solid var(--ink); border-radius: 4px; padding: 14px 20px; font: 600 17px var(--serif); cursor: pointer; }
+.remove { flex: none; border: 0; background: none; color: var(--sub); width: 28px; height: 28px; border-radius: 50%; font-size: 18px; line-height: 1; cursor: pointer; padding: 0; }
+.remove:hover { background: color-mix(in srgb, var(--acc) 12%, transparent); color: var(--acc); }
+
+/* Gennemsyn: originalbilledet sidder fast øverst på telefonen og i venstre kolonne på desktop. */
+.review { display: grid; }
+.review-img { position: sticky; top: 0; z-index: 5; background: var(--paper); border-bottom: 1px solid var(--rule); padding: 10px 16px; }
+.review-imgbox { display: block; height: 33vh; max-width: 420px; margin: 0 auto; aspect-ratio: 3 / 4; border: 0; padding: 0; border-radius: 3px; overflow: hidden; box-shadow: 0 4px 18px #0002; cursor: zoom-in; background: none; }
+.review-imgbox img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pager { display: flex; gap: 6px; justify-content: center; margin-top: 8px; font: 12px var(--sans); flex-wrap: wrap; }
+.pager button { border: 1px solid var(--rule); background: none; border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+.pager button.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.review-draft { max-width: 760px; width: 100%; margin: 0 auto; padding: 22px 16px 40px; }
+@media (min-width: 500px) { .review-draft { padding-inline: 20px; } }
+@media (min-width: 900px) {
+  .review { grid-template-columns: minmax(320px, 44%) 1fr; }
+  .review-img { height: 100vh; border: 0; border-right: 1px solid var(--rule); padding: 28px; display: grid; align-content: start; }
+  .review-imgbox { height: auto; max-height: calc(100vh - 110px); width: 100%; max-width: none; }
+  .review-imgbox img { object-fit: contain; }
+}
+.drafttabs { font: 14px var(--sans); margin: 4px 0 6px; }
+.drafttabs a { text-decoration: none; color: var(--sub); }
+.drafttabs a.on { color: var(--ink); font-weight: 600; text-decoration: underline; text-decoration-color: var(--acc); text-decoration-thickness: 2px; text-underline-offset: 5px; }
+
+/* Felter, der rettes direkte i teksten. Tomme felter viser en kursiv pladsholder. */
+[contenteditable] { outline: none; border-radius: 2px; transition: background .15s; }
+[contenteditable]:hover { background: color-mix(in srgb, var(--acc) 8%, transparent); }
+[contenteditable]:focus { background: color-mix(in srgb, var(--acc) 12%, transparent); box-shadow: 0 2px 0 var(--acc); }
+[contenteditable]:empty::before { content: attr(data-ph); color: var(--sub); font-style: italic; font-weight: 400; font-family: var(--serif); }
+.hint { font: 13px/1.5 var(--sans); color: var(--sub); margin: 4px 0 18px; }
+.draft .title { min-height: 1em; }
+.draft .facts .num { width: 100%; min-width: 0; border: 0; border-bottom: 1px dashed var(--rule); background: none; font: 600 20px var(--serif); padding: 2px 0; outline: none; -moz-appearance: textfield; }
+.draft .facts .num::placeholder { color: var(--sub); font-style: italic; font-weight: 400; font-size: 17px; }
+.draft .facts .num:focus { border-bottom-color: var(--acc); }
+.draft .ings li, .draft .steps li { display: flex; gap: 6px; align-items: flex-start; }
+.draft .ings li .line { flex: 1; }
+.draft .steps li { display: grid; grid-template-columns: 44px 1fr 28px; }
+.draft .group-head { display: flex; align-items: center; gap: 6px; margin: 18px 0 6px; }
+.draft .group-head h3 { margin: 0; flex: 1; }
+.draft .add { display: inline-block; font: 13px var(--sans); color: var(--acc); margin: 8px 0 0; }
+.draft .margin-note { min-height: 1.4em; }
+.metaedit { display: grid; gap: 10px; font: 14px var(--sans); color: var(--sub); margin-top: 24px; border-top: 1px solid var(--rule); padding-top: 14px; }
+.metaedit span[contenteditable] { color: var(--ink); font-family: var(--serif); font-size: 16px; padding: 0 2px; }
+.savebox { margin-top: 30px; display: grid; gap: 12px; }
+.savebox .discard { justify-self: center; font: 14px var(--sans); }
+.dup { border: 2px solid var(--acc); padding: 16px 18px; font-size: 16px; line-height: 1.5; display: grid; gap: 4px; }
+.dup b { color: var(--acc); }
+.dup-actions { display: grid; gap: 8px; margin-top: 10px; }
+@media (min-width: 500px) { .dup-actions { grid-template-columns: 1fr 1fr; } }

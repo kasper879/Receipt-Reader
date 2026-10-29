@@ -1,7 +1,7 @@
 // Forsiden: biblioteket som tekstliste med søgning, sortering og tags.
-import { action, el, joined, present } from "./dom.js";
-import { duration, formatMonth, plural } from "./format.js";
-import { href } from "./routes.js";
+import { action, el, joined, present, send, toast } from "./dom.js";
+import { duration, formatDate, formatMonth, plural } from "./format.js";
+import { go, href } from "./routes.js";
 
 // Søgning, sortering og tagfilter. De bevares, når man går til en opskrift og tilbage.
 const filters = { q: "", sortering: "nyeste", tag: null };
@@ -72,10 +72,67 @@ function controls(tags) {
   return [el("div", {}, "Sortér: ", ...joined(sortLinks)), tags.length > 0 && el("div", {}, "Tags: ", ...joined(tagLinks))];
 }
 
+const readingUrl = (id) => `api/aflaesninger/${encodeURIComponent(id)}`;
+
+function timeOf(iso) {
+  const when = new Date(iso);
+  const today = new Date().toDateString() === when.toDateString();
+  const clock = when.toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" });
+  return today ? `i dag kl. ${clock}` : `${formatDate(iso)} kl. ${clock}`;
+}
+
+// Noter om ventende aflæsninger og udkast, der ikke er gennemset endnu.
+function note(reading) {
+  if (reading.status === "ventende") {
+    const retry = async () => {
+      toast("Prøver aflæsningen igen …");
+      const result = await send(`${readingUrl(reading.id)}/proev-igen`, { method: "POST" }, "Aflæsningen kunne ikke prøves igen nu.");
+      if (result && result.status === "udkast" && result.udkast.length) go(href.review(result.id, result.udkast[0].nr));
+      else if (result) toast(result.fejl ? `Aflæsningen lykkedes ikke: ${result.fejl}` : "Aflæsningen lykkedes ikke. Den prøves igen senere.");
+      showNotes();
+    };
+    const discard = async () => {
+      if (await send(readingUrl(reading.id), { method: "DELETE" }, "Aflæsningen kunne ikke kasseres. Prøv igen.")) showNotes();
+    };
+    return el(
+      "aside",
+      { class: "note" },
+      el("b", {}, "Ventende aflæsning. "),
+      `${plural(reading.originalbilleder.length, "originalbillede", "originalbilleder")} fra ${timeOf(reading.oprettet)} venter på at blive læst. `,
+      "Det sker af sig selv, når der er forbindelse igen – eller ",
+      action("prøv nu", retry),
+      ". ",
+      reading.fejl && el("span", { class: "note-reason" }, reading.fejl, " "),
+      action("Kassér billederne", discard, { class: "note-discard" }),
+    );
+  }
+  if (!reading.udkast.length) {
+    const discard = async () => {
+      if (await send(readingUrl(reading.id), { method: "DELETE" }, "Aflæsningen kunne ikke kasseres. Prøv igen.")) showNotes();
+    };
+    return el("aside", { class: "note" }, el("b", {}, "Aflæsningen fandt ingen opskrifter "), `på billederne fra ${timeOf(reading.oprettet)}. `, action("Kassér billederne", discard));
+  }
+  const count = reading.udkast.length;
+  return el(
+    "aside",
+    { class: "note" },
+    el("b", {}, `${plural(count, "udkast", "udkast")} venter på gennemsyn. `),
+    reading.udkast.map((draft) => draft.titel || "Uden titel").join(", "),
+    ". ",
+    el("a", { href: href.review(reading.id, reading.udkast[0].nr) }, "Fortsæt gennemsynet"),
+  );
+}
+
+async function showNotes() {
+  const readings = await fetch("api/aflaesninger").then((r) => (r.ok ? r.json() : []), () => []);
+  document.getElementById("notes").replaceChildren(...readings.map(note));
+}
+
 let request = 0;
 let total = null;
 
 export async function show() {
+  showNotes();
   const current = ++request;
   const lib = document.getElementById("lib");
   const params = new URLSearchParams({ q: filters.q, sortering: filters.sortering });

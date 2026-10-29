@@ -1,10 +1,12 @@
 """Bibliotek: ejer biblioteksmappen og opskrifterne i den."""
 
 import os
+import re
 import shutil
+import unicodedata
 from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, replace
+from datetime import date, datetime
 from pathlib import Path
 
 from . import recipe_format
@@ -16,6 +18,17 @@ IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"}
 TRASH = ".papirkurv"
 DELETED = ".slettet"
 """Filen i en mappe i papirkurven, der indeholder tidspunktet for sletningen."""
+
+
+_SLUG_LETTERS = str.maketrans({"æ": "ae", "ø": "oe", "å": "aa", "ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+
+
+def slugify(title: str) -> str:
+    """Et læsbart filnavn ud fra titlen, fx "Mormors æblekage" → "mormors-aeblekage"."""
+    text = unicodedata.normalize("NFKD", title.casefold().translate(_SLUG_LETTERS))
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    slug = re.sub(r"[^a-z0-9]+", "-", text).strip("-")[:60].strip("-")
+    return slug or "opskrift"
 
 
 def _unique(base: str, taken: Callable[[str], bool]) -> str:
@@ -89,6 +102,20 @@ class Library:
     def get(self, recipe_id: str) -> Entry | None:
         path = self._file(f"{recipe_id}.md")
         return self._read(path) if path else None
+
+    def create(self, opskrift: Opskrift, originals: list[Path]) -> str:
+        """Gemmer en ny opskrift med et filnavn ud fra titlen og originalbillederne ved siden af.
+
+        Findes filnavnet, får det et nummer bagi. Billederne kopieres, så udkast fra samme
+        aflæsning kan dele dem."""
+        self.directory.mkdir(parents=True, exist_ok=True)
+        recipe_id = _unique(slugify(opskrift.titel or ""), self._taken)
+        names = [f"{recipe_id}.{i}{source.suffix.lower()}" for i, source in enumerate(originals, start=1)]
+        for source, name in zip(originals, names):
+            shutil.copyfile(source, self.directory / name)
+        opskrift = replace(opskrift, oprettet=date.today(), originalbilleder=names, retbillede=None, vurdering=None)
+        _write(self.directory / f"{recipe_id}.md", recipe_format.write(opskrift))
+        return recipe_id
 
     def set_rating(self, recipe_id: str, rating: int | None) -> None:
         """Skriver vurderingen i filen. Resten af filen er uændret."""

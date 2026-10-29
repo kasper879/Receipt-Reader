@@ -4,6 +4,9 @@ export const href = {
   library: "#",
   recipe: (id) => `#opskrift/${encodeURIComponent(id)}`,
   trash: "#papirkurv",
+  newRecipe: "#ny",
+  review: (readingId, nr) => `#gennemsyn/${encodeURIComponent(readingId)}/${nr}`,
+  edit: (id) => `#rediger/${encodeURIComponent(id)}`,
 };
 
 // Den viste skærm og dens id, fx { view: "opskrift", id: "boller-i-karry" }.

@@ -1,6 +1,7 @@
 // Indgangen til frontenden: tema og navigation mellem skærmene. Skærmene ligger i js/.
 import * as library from "./js/library.js";
 import * as recipe from "./js/recipe.js";
+import * as review from "./js/review.js";
 import { currentRoute } from "./js/routes.js";
 import * as trash from "./js/trash.js";
 import { closeViewer } from "./js/viewer.js";
@@ -20,10 +21,13 @@ const VIEWS = {
   forside: () => library.show(),
   opskrift: (id) => recipe.show(id),
   papirkurv: () => trash.show(),
+  ny: () => review.showNew(),
+  gennemsyn: (id) => review.showReview(id),
 };
 
-function route() {
+async function route() {
   closeViewer();
+  await review.flushDraft();
   let { view, id } = currentRoute();
   if (!VIEWS[view]) view = "forside";
   for (const section of document.querySelectorAll("[data-view]")) section.hidden = section.dataset.view !== view;
@@ -36,4 +40,6 @@ followHaTheme();
 document.addEventListener("visibilitychange", followHaTheme);
 window.addEventListener("focus", followHaTheme);
 window.addEventListener("hashchange", route);
+document.getElementById("new-recipe").addEventListener("click", review.newRecipe);
+window.addEventListener("pagehide", review.flushDraft);
 route();
