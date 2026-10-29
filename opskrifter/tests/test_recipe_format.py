@@ -161,3 +161,59 @@ def test_a_rating_outside_one_to_five_gives_a_warning(client: TestClient, write_
     write_file("kage.md", "---\ntitel: Kage\nvurdering: 7\n---\n")
 
     assert client.get("api/opskrifter/kage").json()["advarsel"]
+
+
+def test_a_recipe_without_time_and_portions_has_empty_fields(client: TestClient, write_file: WriteFile) -> None:
+    write_file(
+        "mormors-aeblekage.md",
+        """
+        ---
+        titel: Mormors æblekage
+        portioner:
+        forberedelse:
+        total:
+        tags: []
+        originalbilleder: [mormors-aeblekage.1.jpg]
+        ---
+
+        ## Ingredienser
+
+        - 6 æbler
+        - 100 g smør
+        - kanel
+
+        ## Fremgangsmåde
+
+        1. Kog æblerne til grød.
+        """,
+    )
+
+    recipe = client.get("api/opskrifter/mormors-aeblekage").json()
+
+    assert recipe == {
+        "id": "mormors-aeblekage",
+        "titel": "Mormors æblekage",
+        "portioner": None,
+        "forberedelse": None,
+        "total": None,
+        "vurdering": None,
+        "tags": [],
+        "kilde": None,
+        "oprettet": None,
+        "retbillede": None,
+        "originalbilleder": ["api/billeder/mormors-aeblekage.1.jpg"],
+        "ingredienser": [
+            {
+                "gruppe": None,
+                "linjer": [
+                    {"maengde": 6, "enhed": None, "navn": "æbler"},
+                    {"maengde": 100, "enhed": "g", "navn": "smør"},
+                    {"maengde": None, "enhed": None, "navn": "kanel"},
+                ],
+            }
+        ],
+        "trin": ["Kog æblerne til grød."],
+        "noter": None,
+        "advarsel": None,
+        "raa": None,
+    }
