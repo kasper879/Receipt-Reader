@@ -1,5 +1,5 @@
 // Ny opskrift og gennemsyn: originalbilleder → aflæsning → udkast, der rettes og gemmes som opskrift.
-import { action, el, joined, json, pickImages, present, send, toast } from "./dom.js";
+import { action, el, imageButtons, joined, json, present, send, toast } from "./dom.js";
 import { draftEditor, editable, originalsPanel, saveBox, toDraft } from "./editor.js";
 import { plural } from "./format.js";
 import { back } from "./recipe.js";
@@ -11,12 +11,9 @@ const readingUrl = (id) => `api/aflaesninger/${encodeURIComponent(id)}`;
 
 let picked = [];
 
-// "📷 Ny opskrift" åbner kameraet eller billedgalleriet med det samme.
+// "📷 Ny opskrift" åbner skærmen, hvor man tager billeder med kameraet eller vælger dem fra galleriet.
 export function newRecipe() {
-  pickImages({ multiple: true }, (files) => {
-    picked = [...picked, ...files];
-    go(href.newRecipe);
-  });
+  go(href.newRecipe);
 }
 
 export function showNew() {
@@ -30,14 +27,19 @@ export function showNew() {
       el("button", { type: "button", class: "remove", "aria-label": "Fjern billedet", onclick: () => (picked.splice(i, 1), showNew()) }, "×"),
     );
   });
-  const more = () => pickImages({ multiple: true }, (files) => ((picked = [...picked, ...files]), showNew()));
+  const add = (files) => ((picked = [...picked, ...files]), showNew());
+  const buttons = imageButtons(
+    { cameraLabel: picked.length ? "Tag et billede mere" : "Tag billede", galleryLabel: "Vælg fra galleriet", multiple: true, className: "secondary" },
+    add,
+  );
   view.replaceChildren(
     ...present([
       back(),
       el("div", { class: "kicker" }, "Ny opskrift"),
       el("h1", { class: "title" }, "Originalbilleder"),
       el("p", { class: "hint" }, "Tag et billede af hver side. Fjern et billede, der ikke blev godt, før du sender dem til aflæsning."),
-      el("div", { class: "picks" }, ...thumbs, el("button", { type: "button", class: "pick add-pick", onclick: more }, picked.length ? "+ Flere billeder" : "📷 Tag eller vælg billeder")),
+      thumbs.length > 0 && el("div", { class: "picks" }, ...thumbs),
+      el("div", { class: "pick-buttons" }, ...buttons),
       picked.length > 0 && el("button", { type: "button", class: "save", id: "read-button", onclick: read }, `Aflæs ${plural(picked.length, "billede", "billeder")}`),
     ]),
   );

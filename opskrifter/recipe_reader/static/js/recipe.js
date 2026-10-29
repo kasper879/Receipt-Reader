@@ -108,19 +108,19 @@ async function trash(recipe) {
 function tools(recipe, portions) {
   const photoUrl = `${recipeUrl(recipe.id)}/retbillede`;
   const refresh = (updated) => updated && render(updated, portions);
-  const upload = () =>
-    pickImages({ multiple: false }, async ([file]) => {
-      const body = new FormData();
-      body.append("billede", file);
-      toast("Gemmer retbilledet …");
-      const updated = await send(photoUrl, { method: "PUT", body }, "Retbilledet kunne ikke gemmes. Prøv igen.");
-      if (updated) toast("Retbilledet er gemt.");
-      refresh(updated);
-    });
+  const upload = async ([file]) => {
+    const body = new FormData();
+    body.append("billede", file);
+    toast("Gemmer retbilledet …");
+    const updated = await send(photoUrl, { method: "PUT", body }, "Retbilledet kunne ikke gemmes. Prøv igen.");
+    if (updated) toast("Retbilledet er gemt.");
+    refresh(updated);
+  };
+  // Kameraet og galleriet har hver sin handling, fordi nogle telefoner ikke tilbyder kameraet i filvælgeren.
+  const take = action("📷 Tag retbillede", () => pickImages({ camera: true }, upload));
+  const choose = action(recipe.retbillede ? "Vælg et andet retbillede" : "Vælg retbillede", () => pickImages({}, upload));
   const remove = async () => refresh(await send(photoUrl, { method: "DELETE" }, "Retbilledet kunne ikke fjernes. Prøv igen."));
-  const photo = recipe.retbillede
-    ? [action("Skift retbillede", upload), action("Fjern retbillede", remove)]
-    : [action("Tilføj retbillede", upload)];
+  const photo = recipe.retbillede ? [take, choose, action("Fjern retbillede", remove)] : [take, choose];
   const editLink = el("a", { href: href.edit(recipe.id) }, "Redigér");
   return el("nav", { class: "tools" }, ...joined([editLink, ...photo, action("Slet", () => trash(recipe))]));
 }

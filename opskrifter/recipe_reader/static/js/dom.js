@@ -46,9 +46,31 @@ export async function send(url, options, failure) {
 
 export const json = (method, body) => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
-// Vælg billeder med kamera eller fra galleriet. Telefonen tilbyder begge, når `capture` ikke er sat.
-export function pickImages({ multiple }, onPicked) {
-  const input = el("input", { type: "file", accept: "image/*", ...(multiple && { multiple: "" }) });
-  input.addEventListener("change", () => input.files.length && onPicked([...input.files]));
+// Tag et billede med kameraet (`camera`) eller vælg billeder fra galleriet. Uden `capture` viser nogle
+// telefoner, fx HA companion-appen på Android, kun filer og galleri, så kameraet har sin egen knap.
+export function pickImages({ multiple = false, camera = false }, onPicked) {
+  const input = el("input", {
+    type: "file",
+    accept: "image/*",
+    hidden: "",
+    ...(camera && { capture: "environment" }),
+    ...(multiple && !camera && { multiple: "" }),
+  });
+  // Feltet hænges på siden, mens det bruges. Nogle WebViews sender ellers ikke besked om det valgte billede.
+  document.body.append(input);
+  input.addEventListener("change", () => {
+    const files = [...input.files];
+    input.remove();
+    if (files.length) onPicked(files);
+  });
+  input.addEventListener("cancel", () => input.remove());
   input.click();
+}
+
+// To knapper: tag et billede med kameraet, eller vælg fra galleriet.
+export function imageButtons({ cameraLabel, galleryLabel, multiple = false, className = "" }, onPicked) {
+  return [
+    el("button", { type: "button", class: className, onclick: () => pickImages({ camera: true }, onPicked) }, `📷 ${cameraLabel}`),
+    el("button", { type: "button", class: className, onclick: () => pickImages({ multiple }, onPicked) }, `🖼 ${galleryLabel}`),
+  ];
 }

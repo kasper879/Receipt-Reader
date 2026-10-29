@@ -18,17 +18,26 @@ export async function show(id) {
 
   const images = el("div", { class: "review-side" });
   const renderImages = (originals) => {
-    const add = () =>
-      pickImages({ multiple: true }, async (files) => {
-        const body = new FormData();
-        for (const file of files) body.append("billeder", file);
-        toast("Gemmer originalbillederne …");
-        const updated = await send(`${recipeUrl(id)}/originalbilleder`, { method: "POST", body }, "Billederne kunne ikke gemmes. Prøv igen.");
-        if (!updated) return;
-        toast("Originalbillederne er tilføjet.");
-        renderImages(updated.originalbilleder);
-      });
-    images.replaceChildren(originalsPanel(originals), el("p", { class: "add-originals" }, action("+ Tilføj originalbilleder", add)));
+    const add = async (files) => {
+      const body = new FormData();
+      for (const file of files) body.append("billeder", file);
+      toast("Gemmer originalbillederne …");
+      const updated = await send(`${recipeUrl(id)}/originalbilleder`, { method: "POST", body }, "Billederne kunne ikke gemmes. Prøv igen.");
+      if (!updated) return;
+      toast("Originalbillederne er tilføjet.");
+      renderImages(updated.originalbilleder);
+    };
+    images.replaceChildren(
+      originalsPanel(originals),
+      el(
+        "p",
+        { class: "add-originals" },
+        "Tilføj originalbilleder: ",
+        action("📷 tag billede", () => pickImages({ camera: true }, add)),
+        " · ",
+        action("vælg fra galleriet", () => pickImages({ multiple: true }, add)),
+      ),
+    );
   };
   renderImages(recipe.originalbilleder);
 
