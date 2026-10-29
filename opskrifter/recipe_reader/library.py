@@ -1,5 +1,6 @@
 """Bibliotek: ejer biblioteksmappen og opskrifterne i den."""
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -7,6 +8,21 @@ from . import recipe_format
 from .recipe_format import Opskrift
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"}
+
+
+class NotFound(Exception):
+    """Opskriften findes ikke i biblioteket."""
+
+
+class HasWarning(Exception):
+    """Filen kunne ikke læses korrekt og må derfor kun rettes via Samba."""
+
+
+def _write(path: Path, text: str) -> None:
+    """Skriver atomisk, så en halv fil aldrig ligger i mappen."""
+    temp = path.with_name(f".{path.name}.tmp")
+    temp.write_bytes(text.encode("utf-8"))
+    os.replace(temp, path)
 
 
 @dataclass
@@ -45,6 +61,21 @@ class Library:
     def get(self, recipe_id: str) -> Entry | None:
         path = self._file(f"{recipe_id}.md")
         return self._read(path) if path else None
+
+    def set_rating(self, recipe_id: str, rating: int | None) -> None:
+        """Skriver vurderingen i filen. Resten af filen er uændret."""
+        path = self._writable(recipe_id)
+        text = path.read_bytes().decode("utf-8")
+        _write(path, recipe_format.set_field(text, "vurdering", rating))
+
+    def _writable(self, recipe_id: str) -> Path:
+        """Stien til en opskrift, som appen må ændre. En fil med advarsel overskrives aldrig."""
+        path = self._file(f"{recipe_id}.md")
+        if path is None:
+            raise NotFound(recipe_id)
+        if self._read(path).opskrift.advarsel:
+            raise HasWarning(recipe_id)
+        return path
 
     def image(self, name: str) -> Path | None:
         """Stien til et billede i biblioteksmappen, eller None hvis det ikke findes der."""

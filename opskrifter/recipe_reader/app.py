@@ -2,19 +2,24 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
-from .library import Entry, Library
+from .library import Entry, HasWarning, Library, NotFound
 from .reader import Reader, UnconfiguredReader
 from .search_index import SearchIndex, Sorting
 from .settings import Settings
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+class RatingBody(BaseModel):
+    vurdering: Annotated[int, Field(ge=1, le=5)] | None
 
 
 def create_app(settings: Settings, reader: Reader | None = None) -> FastAPI:
@@ -48,10 +53,28 @@ def create_app(settings: Settings, reader: Reader | None = None) -> FastAPI:
 
     @app.get("/api/opskrifter/{recipe_id}")
     def get_recipe(recipe_id: str) -> dict[str, Any]:
+        return _details(_get(recipe_id))
+
+    @app.put("/api/opskrifter/{recipe_id}/vurdering")
+    def set_rating(recipe_id: str, body: RatingBody) -> dict[str, Any]:
+        library.set_rating(recipe_id, body.vurdering)
+        return _details(_get(recipe_id))
+
+    def _get(recipe_id: str) -> Entry:
         entry = library.get(recipe_id)
         if entry is None:
             raise HTTPException(status_code=404, detail="Opskriften findes ikke")
-        return _details(entry)
+        return entry
+
+    @app.exception_handler(NotFound)
+    def not_found(request: Request, error: NotFound) -> JSONResponse:
+        return JSONResponse({"detail": "Opskriften findes ikke"}, status_code=404)
+
+    @app.exception_handler(HasWarning)
+    def has_warning(request: Request, error: HasWarning) -> JSONResponse:
+        return JSONResponse(
+            {"detail": "Filen kunne ikke læses korrekt og kan kun rettes via Samba"}, status_code=409
+        )
 
     @app.get("/api/billeder/{name}")
     def image(name: str) -> FileResponse:

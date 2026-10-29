@@ -29,9 +29,9 @@ function el(tag, attrs = {}, ...children) {
 const duration = (minutes) =>
   minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} t${minutes % 60 ? ` ${minutes % 60} min` : ""}`;
 
-function stars(rating, always = false) {
-  if (!rating && !always) return null;
-  const wrap = el("span", { class: "stars", "aria-label": rating ? `${rating} af 5 stjerner` : "Ingen vurdering" });
+function stars(rating) {
+  if (!rating) return null;
+  const wrap = el("span", { class: "stars", "aria-label": `${rating} af 5 stjerner` });
   for (let i = 1; i <= 5; i++) wrap.append(el("span", { class: i <= rating ? "on" : "" }, "★"));
   return wrap;
 }
@@ -239,6 +239,42 @@ function portionStepper(recipe, portions) {
 
 const back = () => el("a", { class: "back", href: "#" }, "← Biblioteket");
 
+// Fælles vurdering for husstanden. Et klik på den aktuelle vurdering fjerner den.
+function ratingControl(recipe, portions) {
+  const rate = async (rating) => {
+    const response = await fetch(`api/opskrifter/${encodeURIComponent(recipe.id)}/vurdering`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vurdering: rating }),
+    });
+    if (response.ok) renderRecipe(await response.json(), portions);
+    else toast("Vurderingen kunne ikke gemmes. Prøv igen.");
+  };
+  const buttons = [1, 2, 3, 4, 5].map((i) =>
+    el(
+      "button",
+      { type: "button", class: i <= (recipe.vurdering || 0) ? "on" : "", "aria-label": `${i} ${i === 1 ? "stjerne" : "stjerner"}`, onclick: () => rate(i === recipe.vurdering ? null : i) },
+      "★",
+    ),
+  );
+  return el(
+    "div",
+    { class: "rating" },
+    el("span", { class: "stars", role: "group", "aria-label": recipe.vurdering ? `Vurdering: ${recipe.vurdering} af 5` : "Ingen vurdering" }, ...buttons),
+    recipe.vurdering && el("a", { href: "", class: "unrate", onclick: (event) => (event.preventDefault(), rate(null)) }, "fjern"),
+  );
+}
+
+let toastTimer = null;
+
+function toast(message) {
+  const box = document.getElementById("toast");
+  box.textContent = message;
+  box.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (box.hidden = true), 3200);
+}
+
 function renderRecipe(recipe, portions) {
   const view = document.getElementById("opskrift");
   if (recipe.advarsel) {
@@ -268,7 +304,7 @@ function renderRecipe(recipe, portions) {
     recipe.tags.length > 0 && el("div", { class: "kicker" }, recipe.tags.join(" · ")),
     el("h1", { class: "title" }, recipe.titel),
     byline.length > 0 && el("div", { class: "byline" }, ...byline.flatMap((part, i) => (i ? [" · ", ...part] : part))),
-    el("div", { class: "rating" }, stars(recipe.vurdering, true)),
+    ratingControl(recipe, portions),
     hero(recipe),
     el(
       "div",

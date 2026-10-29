@@ -181,6 +181,33 @@ def _quantity(match: re.Match[str]) -> Quantity:
     return int(value) if value.denominator == 1 else float(value)
 
 
+def set_field(text: str, key: str, value: object) -> str:
+    """Sætter ét felt i frontmatter. None fjerner feltet. Resten af filen er byte for byte uændret."""
+    lines = text.splitlines(keepends=True)
+    newline = "\r\n" if lines and lines[0].endswith("\r\n") else "\n"
+    if not lines or lines[0].strip() != "---":
+        head = [f"---{newline}", *([f"{key}: {yaml_value(value)}{newline}"] if value is not None else []), f"---{newline}"]
+        return "".join(head) + text
+    end = next((i for i, line in enumerate(lines[1:], start=1) if line.strip() == "---"), None)
+    if end is None:
+        raise ValueError("Frontmatter er ikke afsluttet med '---'")
+    new = [f"{key}: {yaml_value(value)}{newline}"] if value is not None else []
+    for i in range(1, end):
+        if re.match(rf"^{re.escape(key)}\s*:", lines[i]):
+            # Feltets egne linjer: linjen selv og indrykkede linjer eller listepunkter under den.
+            stop = i + 1
+            while stop < end and re.match(r"^(\s+\S|-\s)", lines[stop]):
+                stop += 1
+            return "".join(lines[:i] + new + lines[stop:])
+    return "".join(lines[:end] + new + lines[end:])
+
+
+def yaml_value(value: object) -> str:
+    """Et felt skrevet som YAML på én linje, fx `4`, `Mormors kogebog` eller `[aftensmad, kage]`."""
+    dumped: str = yaml.safe_dump(value, allow_unicode=True, default_flow_style=True, width=10_000)
+    return dumped.removesuffix("\n").removesuffix("\n...").strip()
+
+
 def _split_frontmatter(text: str) -> tuple[str, str]:
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
