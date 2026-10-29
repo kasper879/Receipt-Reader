@@ -19,9 +19,13 @@ class HasWarning(Exception):
 
 
 def _write(path: Path, text: str) -> None:
+    _write_bytes(path, text.encode("utf-8"))
+
+
+def _write_bytes(path: Path, data: bytes) -> None:
     """Skriver atomisk, så en halv fil aldrig ligger i mappen."""
     temp = path.with_name(f".{path.name}.tmp")
-    temp.write_bytes(text.encode("utf-8"))
+    temp.write_bytes(data)
     os.replace(temp, path)
 
 
@@ -67,6 +71,24 @@ class Library:
         path = self._writable(recipe_id)
         text = path.read_bytes().decode("utf-8")
         _write(path, recipe_format.set_field(text, "vurdering", rating))
+
+    def set_dish_photo(self, recipe_id: str, jpeg: bytes) -> None:
+        """Gemmer retbilledet som `<slug>.ret.jpg` ved siden af filen. Et tidligere retbillede fjernes."""
+        path = self._writable(recipe_id)
+        name = f"{recipe_id}.ret.jpg"
+        _write_bytes(self.directory / name, jpeg)
+        self._replace_dish_photo(path, name)
+
+    def remove_dish_photo(self, recipe_id: str) -> None:
+        self._replace_dish_photo(self._writable(recipe_id), None)
+
+    def _replace_dish_photo(self, path: Path, name: str | None) -> None:
+        opskrift = self._read(path).opskrift
+        old = opskrift.retbillede
+        _write(path, recipe_format.set_field(path.read_bytes().decode("utf-8"), "retbillede", name))
+        # Et originalbillede kan også være valgt som retbillede. Det må ikke slettes.
+        if old and old != name and old not in opskrift.originalbilleder and (old_path := self._file(old)):
+            old_path.unlink()
 
     def _writable(self, recipe_id: str) -> Path:
         """Stien til en opskrift, som appen må ændre. En fil med advarsel overskrives aldrig."""

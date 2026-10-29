@@ -5,11 +5,12 @@ from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import quote
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from . import images
 from .library import Entry, HasWarning, Library, NotFound
 from .reader import Reader, UnconfiguredReader
 from .search_index import SearchIndex, Sorting
@@ -37,9 +38,9 @@ def create_app(settings: Settings, reader: Reader | None = None) -> FastAPI:
 
     @app.middleware("http")
     async def revalidate_frontend(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        """Frontenden hentes altid i nyeste version efter en opdatering af add-on'en."""
+        """Frontenden og billederne hentes altid i nyeste version, fx efter en opdatering eller et skiftet retbillede."""
         response = await call_next(request)
-        if request.url.path == "/" or request.url.path.startswith("/static/"):
+        if request.url.path == "/" or request.url.path.startswith(("/static/", "/api/billeder/")):
             response.headers["Cache-Control"] = "no-cache"
         return response
 
@@ -58,6 +59,17 @@ def create_app(settings: Settings, reader: Reader | None = None) -> FastAPI:
     @app.put("/api/opskrifter/{recipe_id}/vurdering")
     def set_rating(recipe_id: str, body: RatingBody) -> dict[str, Any]:
         library.set_rating(recipe_id, body.vurdering)
+        return _details(_get(recipe_id))
+
+    @app.put("/api/opskrifter/{recipe_id}/retbillede")
+    def set_dish_photo(recipe_id: str, billede: UploadFile) -> dict[str, Any]:
+        _get(recipe_id)
+        library.set_dish_photo(recipe_id, _prepared(billede, images.DISH_PHOTO_SIZE))
+        return _details(_get(recipe_id))
+
+    @app.delete("/api/opskrifter/{recipe_id}/retbillede")
+    def remove_dish_photo(recipe_id: str) -> dict[str, Any]:
+        library.remove_dish_photo(recipe_id)
         return _details(_get(recipe_id))
 
     def _get(recipe_id: str) -> Entry:
@@ -89,6 +101,13 @@ def create_app(settings: Settings, reader: Reader | None = None) -> FastAPI:
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app
+
+
+def _prepared(upload: UploadFile, longest_side: int) -> bytes:
+    try:
+        return images.prepare(upload.file.read(), longest_side)
+    except images.InvalidImage as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 def _common(entry: Entry) -> dict[str, Any]:

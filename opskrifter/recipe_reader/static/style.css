@@ -149,3 +149,6 @@ a.row:hover .row-t { text-decoration: underline; text-underline-offset: 3px; }
 .rating .unrate { font: 13px var(--sans); color: var(--sub); }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 90; background: var(--ink); color: var(--paper); font: 14px var(--sans); padding: 12px 18px; border-radius: 4px; max-width: calc(100% - 32px); box-shadow: 0 4px 18px #0003; }
 .toast[hidden] { display: none; }
+
+/* Handlinger på en opskrift, nederst på siden. */
+.tools { font: 14px var(--sans); color: var(--sub); margin-top: 30px; border-top: 1px solid var(--rule); padding-top: 14px; line-height: 2; }

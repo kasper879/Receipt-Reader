@@ -314,7 +314,46 @@ function renderRecipe(recipe, portions) {
       fact("I alt", recipe.total ? el("b", {}, duration(recipe.total)) : missing()),
     ),
     el("div", { class: "body" }, ingredients(recipe, factor), steps(recipe)),
+    tools(recipe, portions),
   ]));
+}
+
+// Vælg et billede med kamera eller fra galleriet. Telefonen tilbyder begge, når `capture` ikke er sat.
+function pickImages({ multiple }, onPicked) {
+  const input = el("input", { type: "file", accept: "image/*", ...(multiple && { multiple: "" }) });
+  input.addEventListener("change", () => input.files.length && onPicked([...input.files]));
+  input.click();
+}
+
+async function send(url, options, failure) {
+  const response = await fetch(url, options);
+  if (response.ok) return response.json();
+  const detail = await response.json().catch(() => null);
+  toast((detail && typeof detail.detail === "string" && detail.detail) || failure);
+  return null;
+}
+
+function action(label, onclick) {
+  return el("a", { href: "", onclick: (event) => (event.preventDefault(), onclick()) }, label);
+}
+
+function tools(recipe, portions) {
+  const url = `api/opskrifter/${encodeURIComponent(recipe.id)}/retbillede`;
+  const refresh = (updated) => updated && renderRecipe(updated, portions);
+  const upload = () =>
+    pickImages({ multiple: false }, async ([file]) => {
+      const body = new FormData();
+      body.append("billede", file);
+      toast("Gemmer retbilledet …");
+      const updated = await send(url, { method: "PUT", body }, "Retbilledet kunne ikke gemmes. Prøv igen.");
+      if (updated) toast("Retbilledet er gemt.");
+      refresh(updated);
+    });
+  const remove = async () => refresh(await send(url, { method: "DELETE" }, "Retbilledet kunne ikke fjernes. Prøv igen."));
+  const links = recipe.retbillede
+    ? [action("Skift retbillede", upload), action("Fjern retbillede", remove)]
+    : [action("Tilføj retbillede", upload)];
+  return el("nav", { class: "tools" }, ...joined(links));
 }
 
 async function showRecipe(id) {
