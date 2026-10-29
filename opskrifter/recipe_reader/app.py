@@ -1,12 +1,16 @@
+import asyncio
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -19,12 +23,18 @@ from .settings import Settings
 
 STATIC_DIR = Path(__file__).parent / "static"
 
+logger = logging.getLogger(__name__)
+
 
 class RatingBody(BaseModel):
     vurdering: Annotated[int, Field(ge=1, le=5)] | None
 
 
-def create_app(settings: Settings, reader: Reader | None = None) -> FastAPI:
+RETRY_CHECK_SECONDS = 30.0
+"""Hvor ofte baggrundsopgaven ser efter ventende aflæsninger, der skal prøves igen."""
+
+
+def create_app(settings: Settings, reader: Reader | None = None, retry_check_seconds: float = RETRY_CHECK_SECONDS) -> FastAPI:
     library = Library(settings.library_dir)
     index = SearchIndex(settings.index_path, library, _summary)
     readings = Readings(settings.library_dir, reader or UnconfiguredReader())
@@ -40,7 +50,11 @@ def create_app(settings: Settings, reader: Reader | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         index.sync()
+        retrying = asyncio.create_task(_retry_pending(readings, retry_check_seconds))
         yield
+        retrying.cancel()
+        with suppress(asyncio.CancelledError):
+            await retrying
         index.close()
 
     app = FastAPI(title="Opskrifter", lifespan=lifespan)
@@ -132,6 +146,19 @@ def create_app(settings: Settings, reader: Reader | None = None) -> FastAPI:
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app
+
+
+async def _retry_pending(readings: Readings, interval: float) -> None:
+    """Prøver ventende aflæsninger igen i baggrunden, også dem, der ventede, da appen blev startet."""
+    while True:
+        for reading_id in readings.due(datetime.now()):
+            try:
+                await run_in_threadpool(readings.retry, reading_id)
+            except ReadingNotFound:
+                pass  # Kasseret i mellemtiden.
+            except Exception:
+                logger.exception("Den ventende aflæsning %s kunne ikke prøves igen", reading_id)
+        await asyncio.sleep(interval)
 
 
 def _prepared(upload: UploadFile, longest_side: int) -> bytes:

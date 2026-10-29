@@ -119,30 +119,50 @@ class Readings:
         self.directory = library_dir / FOLDER
         self.reader = reader
         self._lock = threading.RLock()
+        self._busy: set[str] = set()
+        """Aflæsninger, der bliver aflæst lige nu, så den samme ikke aflæses to gange på én gang."""
 
     def start(self, images: list[bytes]) -> Reading:
         """Gemmer originalbillederne og aflæser dem. En teknisk fejl giver en ventende aflæsning."""
         now = datetime.now().replace(microsecond=0)
         reading_id = f"{now:%Y%m%d-%H%M%S}-{secrets.token_hex(2)}"
         folder = self.directory / reading_id
-        folder.mkdir(parents=True)
-        names = [f"{i}.jpg" for i in range(1, len(images) + 1)]
-        for name, data in zip(names, images):
-            (folder / name).write_bytes(data)
-        reading = Reading(id=reading_id, oprettet=now, billeder=names, status="ventende")
-        self._save(reading)
-        return self._read(reading)
+        with self._lock:
+            self._busy.add(reading_id)
+        try:
+            folder.mkdir(parents=True)
+            names = [f"{i}.jpg" for i in range(1, len(images) + 1)]
+            for name, data in zip(names, images):
+                (folder / name).write_bytes(data)
+            reading = Reading(id=reading_id, oprettet=now, billeder=names, status="ventende")
+            self._save(reading)
+            return self._read(reading)
+        finally:
+            with self._lock:
+                self._busy.discard(reading_id)
 
     def retry(self, reading_id: str) -> Reading:
-        """Prøver en ventende aflæsning igen nu."""
-        reading = self.get(reading_id)
-        if reading.status != "ventende":
-            return reading
-        return self._read(reading)
+        """Prøver en ventende aflæsning igen nu. Er den allerede ved at blive aflæst, sker der ikke mere."""
+        with self._lock:
+            reading = self.get(reading_id)
+            if reading.status != "ventende" or reading_id in self._busy:
+                return reading
+            self._busy.add(reading_id)
+        try:
+            return self._read(reading)
+        finally:
+            with self._lock:
+                self._busy.discard(reading_id)
 
     def due(self, now: datetime) -> list[str]:
-        """Ventende aflæsninger, der skal prøves igen automatisk nu."""
-        return [r.id for r in self.list() if r.status == "ventende" and r.naeste_forsoeg is not None and r.naeste_forsoeg <= now]
+        """Ventende aflæsninger, der skal prøves igen automatisk nu.
+
+        En aflæsning uden tidspunkt for næste forsøg blev afbrudt, fx af en genstart, og genoptages straks."""
+        return [
+            r.id
+            for r in self.list()
+            if r.status == "ventende" and r.id not in self._busy and (r.naeste_forsoeg is None or r.naeste_forsoeg <= now)
+        ]
 
     def _read(self, reading: Reading) -> Reading:
         images = [(self.directory / reading.id / name).read_bytes() for name in reading.billeder]
