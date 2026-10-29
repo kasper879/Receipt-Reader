@@ -1,0 +1,3 @@
+# Markdown-filer er sandheden, søgeindekset er en kopi
+
+Biblioteket gemmes som én Markdown-fil pr. opskrift (med originalbilleder ved siden af) i `/share/opskrifter` på Home Assistant-maskinen, ikke i en database. Det gør, at opskrifterne kan læses og rettes direkte via Samba, overlever hvis appen forsvinder, og kommer med i HA's fulde backups. Søgeindekset (fx SQLite) er kun en afledt kopi, der altid kan slettes og genopbygges ud fra filerne. Derfor skal appen opdage ændringer foretaget uden for appen, og en fil, der ikke kan læses korrekt, vises med en advarsel i stedet for at blive sprunget over.
