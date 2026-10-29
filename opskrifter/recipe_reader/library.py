@@ -1,7 +1,6 @@
 """Bibliotek: ejer biblioteksmappen og opskrifterne i den."""
 
 from dataclasses import dataclass
-from datetime import date
 from pathlib import Path
 
 from . import recipe_format
@@ -18,18 +17,30 @@ class Entry:
     opskrift: Opskrift
 
 
+@dataclass(frozen=True)
+class LibraryFile:
+    """En opskriftsfil, som søgeindekset ser den: id, ændringstid og størrelse."""
+
+    id: str
+    mtime_ns: int
+    size: int
+
+
 class Library:
     def __init__(self, directory: Path) -> None:
         self.directory = directory
 
-    def list(self) -> list[Entry]:
-        """Alle opskrifter, nyeste først. Opskrifter uden oprettet-dato kommer sidst."""
+    def files(self) -> list[LibraryFile]:
+        """Alle opskriftsfiler direkte i mappen. Skjulte undermapper er ikke en del af biblioteket."""
         if not self.directory.is_dir():
             return []
-        entries = [self._read(path) for path in self.directory.glob("*.md")]
-        entries.sort(key=lambda e: (e.opskrift.titel or e.id).casefold())
-        entries.sort(key=lambda e: e.opskrift.oprettet or date.min, reverse=True)
-        return entries
+        files = []
+        for path in self.directory.glob("*.md"):
+            if path.name.startswith(".") or not path.is_file():
+                continue
+            stat = path.stat()
+            files.append(LibraryFile(id=path.stem, mtime_ns=stat.st_mtime_ns, size=stat.st_size))
+        return files
 
     def get(self, recipe_id: str) -> Entry | None:
         path = self._file(f"{recipe_id}.md")

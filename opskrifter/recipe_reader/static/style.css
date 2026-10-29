@@ -128,3 +128,10 @@ a.row:hover .row-t { text-decoration: underline; text-underline-offset: 3px; }
 .viewer-in img { display: block; width: 100%; max-height: 80vh; object-fit: contain; border-radius: 6px; }
 .viewer-nav { display: flex; gap: 8px; align-items: center; justify-content: center; color: #fff; font: 14px var(--sans); }
 .viewer-nav button { background: #fff2; border: 0; color: #fff; border-radius: 999px; padding: 8px 16px; cursor: pointer; }
+
+/* Sortering og tags som tekstlinks, og overskrifter, der følger sorteringen. */
+.controls { margin: 28px 0 6px; display: grid; gap: 8px; font: 14px var(--sans); color: var(--sub); }
+.controls a { color: var(--sub); text-decoration: none; }
+.controls a.on { color: var(--ink); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.sec { font: 600 11px var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--acc); border-bottom: 1px solid var(--rule); padding: 22px 0 8px; margin: 0; }
+.sec + .row { border-top: 0; }

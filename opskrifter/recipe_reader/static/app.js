@@ -61,20 +61,82 @@ function row(item) {
   );
 }
 
+// Søgning, sortering og tagfilter. De bevares, når man går til en opskrift og tilbage.
+const filters = { q: "", sortering: "nyeste", tag: null };
+
+const SORTINGS = { nyeste: "nyeste først", vurdering: "højeste vurdering", alfabetisk: "alfabetisk" };
+
+// Overskrifterne følger sorteringen: måned og år, forbogstav eller antal stjerner.
+function heading(item) {
+  if (filters.sortering === "alfabetisk") return item.titel.charAt(0).toUpperCase();
+  if (filters.sortering === "vurdering") return item.vurdering ? "★".repeat(item.vurdering) : "Uden vurdering";
+  if (!item.oprettet) return "Uden dato";
+  const [year, month] = item.oprettet.split("-").map(Number);
+  return `${MONTHS[month - 1]} ${year}`;
+}
+
+function sections(items) {
+  let last = null;
+  return items.flatMap((item) => {
+    const title = heading(item);
+    const parts = title === last ? [row(item)] : [el("h2", { class: "sec" }, title), row(item)];
+    last = title;
+    return parts;
+  });
+}
+
+function link(label, on, onclick) {
+  return el("a", { href: "", class: on ? "on" : "", onclick: (event) => (event.preventDefault(), onclick()) }, label);
+}
+
+const joined = (parts) => parts.flatMap((part, i) => (i ? [" · ", part] : [part]));
+
+function controls(tags) {
+  const sortLinks = Object.entries(SORTINGS).map(([key, label]) =>
+    link(label, filters.sortering === key, () => ((filters.sortering = key), showLibrary())),
+  );
+  const tagLinks = [
+    link("alle", !filters.tag, () => ((filters.tag = null), showLibrary())),
+    ...tags.map((tag) => link(tag, filters.tag === tag, () => ((filters.tag = filters.tag === tag ? null : tag), showLibrary()))),
+  ];
+  return [
+    el("div", {}, "Sortér: ", ...joined(sortLinks)),
+    tags.length > 0 && el("div", {}, "Tags: ", ...joined(tagLinks)),
+  ];
+}
+
+let libraryRequest = 0;
+let libraryTotal = null;
+
 async function showLibrary() {
+  const request = ++libraryRequest;
   const lib = document.getElementById("lib");
+  const params = new URLSearchParams({ q: filters.q, sortering: filters.sortering });
+  if (filters.tag) params.set("tag", filters.tag);
   try {
-    const response = await fetch("api/opskrifter");
-    if (!response.ok) throw new Error(response.statusText);
-    const items = await response.json();
-    document.getElementById("kicker").textContent = `Biblioteket · ${items.length} ${items.length === 1 ? "opskrift" : "opskrifter"}`;
-    lib.replaceChildren(
-      ...(items.length ? items.map(row) : [el("p", { class: "empty" }, "Biblioteket er tomt. Tilføj den første opskrift.")]),
-    );
+    const [response, tagsResponse] = await Promise.all([fetch(`api/opskrifter?${params}`), fetch("api/tags")]);
+    if (!response.ok || !tagsResponse.ok) throw new Error(response.statusText);
+    const [items, tags] = await Promise.all([response.json(), tagsResponse.json()]);
+    if (request !== libraryRequest) return;
+    const filtered = filters.q.trim() || filters.tag;
+    if (!filtered) libraryTotal = items.length;
+    if (libraryTotal != null) {
+      document.getElementById("kicker").textContent = `Biblioteket · ${libraryTotal} ${libraryTotal === 1 ? "opskrift" : "opskrifter"}`;
+    }
+    document.getElementById("controls").replaceChildren(...present(controls(tags)));
+    const empty = filtered ? "Ingen opskrifter matcher søgningen." : "Biblioteket er tomt. Tilføj den første opskrift.";
+    lib.replaceChildren(...(items.length ? sections(items) : [el("p", { class: "empty" }, empty)]));
   } catch {
-    lib.replaceChildren(el("p", { class: "empty" }, "Biblioteket kunne ikke hentes. Prøv igen om lidt."));
+    if (request === libraryRequest) lib.replaceChildren(el("p", { class: "empty" }, "Biblioteket kunne ikke hentes. Prøv igen om lidt."));
   }
 }
+
+let searchTimer = null;
+document.querySelector(".search").addEventListener("input", (event) => {
+  filters.q = event.target.value;
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(showLibrary, 120);
+});
 
 // ---------------- Opskriftsvisning ----------------
 

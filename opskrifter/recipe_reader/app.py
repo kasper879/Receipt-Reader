@@ -1,3 +1,5 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -9,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .library import Entry, Library
 from .reader import Reader, UnconfiguredReader
+from .search_index import SearchIndex, Sorting
 from .settings import Settings
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -16,12 +19,23 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 def create_app(settings: Settings, reader: Reader | None = None) -> FastAPI:
     library = Library(settings.library_dir)
-    app = FastAPI(title="Opskrifter")
+    index = SearchIndex(settings.index_path, library, _summary)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        index.sync()
+        yield
+
+    app = FastAPI(title="Opskrifter", lifespan=lifespan)
     app.state.reader = reader or UnconfiguredReader()
 
     @app.get("/api/opskrifter")
-    def list_recipes() -> list[dict[str, Any]]:
-        return [_summary(entry) for entry in library.list()]
+    def list_recipes(q: str = "", sortering: Sorting = Sorting.NYESTE, tag: str | None = None) -> list[dict[str, Any]]:
+        return index.search(q, sortering, tag)
+
+    @app.get("/api/tags")
+    def tags() -> list[str]:
+        return index.tags()
 
     @app.get("/api/opskrifter/{recipe_id}")
     def get_recipe(recipe_id: str) -> dict[str, Any]:
