@@ -10,6 +10,7 @@ en konfigurationsfejl, som vises i UI'et.
 import base64
 import json
 import logging
+import time
 from typing import Any
 
 import anthropic
@@ -22,8 +23,9 @@ from .settings import Settings
 
 logger = logging.getLogger(__name__)
 
-TIMEOUT_SECONDS = 180.0
-"""Hvor længe én aflæsning må tage. SDK'et prøver selv igen ved netværksfejl, 429 og 5xx."""
+TIMEOUT = anthropic.Timeout(120.0, connect=10.0)
+"""Hvor længe ét forsøg må tage. Derefter prøver SDK'et én gang til, og så bliver aflæsningen ventende."""
+MAX_RETRIES = 1
 
 PROMPT = """Du aflæser fotograferede opskrifter fra kogebøger, håndskrevne kort, udklip og hjemmesider til et husstandsbibliotek.
 
@@ -136,6 +138,8 @@ class ClaudeReader:
         content.append({"type": "text", "text": f"Aflæs opskrifterne på de {len(images)} billeder."})
         messages: list[BetaMessageParam] = [{"role": "user", "content": content}]
         output_config: BetaOutputConfigParam = {"effort": "medium", "format": {"type": "json_schema", "schema": SCHEMA}}
+        started = time.monotonic()
+        logger.info("Sender %d originalbilleder til %s", len(images), self.model)
         try:
             response = self.client.beta.messages.create(
                 model=self.model,
@@ -162,6 +166,11 @@ class ClaudeReader:
             logger.warning("Ingen forbindelse til aflæsningstjenesten (%s)", type(error).__name__)
             raise TechnicalError("Der er ingen forbindelse til aflæsningstjenesten. Den prøves igen senere.") from error
 
+        logger.info(
+            "Svar fra %s efter %.0f s: %s, %d input-tokens, %d output-tokens",
+            response.model, time.monotonic() - started, response.stop_reason,
+            response.usage.input_tokens, response.usage.output_tokens,
+        )
         if response.stop_reason == "refusal":
             raise RejectedError("Aflæsningstjenesten afviste billederne. Prøv igen, eller tag nye billeder.")
         if response.stop_reason == "max_tokens":
@@ -195,5 +204,5 @@ def reader_from_settings(settings: Settings) -> Reader:
     """Claude-aflæseren, når der er en API-nøgle i indstillingerne. Ellers en aflæser, der forklarer, at den mangler."""
     if not settings.api_key:
         return UnconfiguredReader()
-    client = anthropic.Anthropic(api_key=settings.api_key, timeout=TIMEOUT_SECONDS, max_retries=2)
+    client = anthropic.Anthropic(api_key=settings.api_key, timeout=TIMEOUT, max_retries=MAX_RETRIES)
     return ClaudeReader(client=client, model=settings.model)

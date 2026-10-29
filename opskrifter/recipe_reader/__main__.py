@@ -1,5 +1,7 @@
 """Starter add-on'en: API og frontend på Ingress-porten."""
 
+import logging
+
 import uvicorn
 
 from .app import create_app
@@ -10,6 +12,8 @@ INGRESS_PORT = 8099
 
 
 def main() -> None:
+    # Tidspunkt, niveau og modul på hver linje i add-on'ens log. API-nøglen logges aldrig.
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
     settings = Settings.from_environment()
     settings.library_dir.mkdir(parents=True, exist_ok=True)
     settings.index_path.parent.mkdir(parents=True, exist_ok=True)

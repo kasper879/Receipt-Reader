@@ -1,5 +1,13 @@
 # Ændringer
 
+## 0.3.0
+
+- **Aflæsningen kører i baggrunden.** Upload svarer med det samme, og skærmen viser, hvor mange sekunder aflæsningen har kørt. Du kan forlade siden, så kommer resultatet som en note på forsiden, og noten opdaterer sig selv.
+- **Kortere ventetid:** Hvert forsøg hos aflæsningstjenesten må højst tage 2 minutter, og der prøves én gang til. Derefter bliver aflæsningen ventende og prøves igen senere.
+- **Logning af aflæsninger** i add-on'ens log: start, antal billeder, model, varighed, tokens brugt og resultatet eller fejlen med næste forsøg. API-nøglen logges aldrig.
+- **Kameraet har sin egen knap**, når du tilføjer billeder, fordi nogle telefoner kun viser galleriet i filvælgeren.
+- Tags gemmes altid med små bogstaver.
+
 ## 0.2.0
 
 - **Ny opskrift:** Fotografér en opskrift med kameraet, eller vælg billeder fra galleriet. Aflæsningen laver dem om til et udkast på dansk med metriske enheder. Kræver en API-nøgle til Claude i indstillingen `api_noegle`.

@@ -36,10 +36,10 @@ def router(readings: Readings, library: Library, similar_recipes: SimilarRecipes
 
     @api.post("/aflaesninger")
     def start(billeder: list[UploadFile]) -> JSONResponse:
-        """Gemmer originalbillederne og aflæser dem. Svaret er udkast, eller en ventende aflæsning (202)."""
+        """Gemmer originalbillederne og starter aflæsningen i baggrunden (202). Klienten følger den via
+        GET api/aflaesninger/{id}, til `i_gang` er falsk: så er der udkast, eller den er ventende."""
         data = [prepared(upload, images.ORIGINAL_IMAGE_SIZE) for upload in billeder]
-        reading = readings.start(data)
-        return JSONResponse(reading_view(reading), status_code=200 if reading.status == "udkast" else 202)
+        return JSONResponse(reading_view(readings.start(data)), status_code=202)
 
     @api.get("/aflaesninger")
     def list_readings() -> list[dict[str, Any]]:
@@ -79,8 +79,8 @@ def router(readings: Readings, library: Library, similar_recipes: SimilarRecipes
         return {"naeste": readings.remove_draft(reading_id, nr)}
 
     @api.post("/aflaesninger/{reading_id}/proev-igen")
-    def retry(reading_id: str) -> dict[str, Any]:
-        return reading_view(readings.retry(reading_id))
+    def retry(reading_id: str) -> JSONResponse:
+        return JSONResponse(reading_view(readings.retry_in_background(reading_id)), status_code=202)
 
     @api.delete("/aflaesninger/{reading_id}")
     def discard(reading_id: str) -> dict[str, Any]:
@@ -106,4 +106,5 @@ def reading_view(reading: Reading) -> dict[str, Any]:
         "naeste_forsoeg": reading.naeste_forsoeg.isoformat() if reading.naeste_forsoeg else None,
         "fejl": reading.fejl,
         "automatisk": reading.automatisk,
+        "i_gang": reading.i_gang,
     }

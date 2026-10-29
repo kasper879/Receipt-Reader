@@ -1,7 +1,8 @@
 // Forsiden: biblioteket som tekstliste med søgning, sortering og tags.
 import { action, el, joined, present, send, toast } from "./dom.js";
 import { duration, formatDate, formatMonth, plural } from "./format.js";
-import { go, href } from "./routes.js";
+import { currentRoute, href } from "./routes.js";
+import { afterReading, waitForReading } from "./review.js";
 
 // Søgning, sortering og tagfilter. De bevares, når man går til en opskrift og tilbage.
 const filters = { q: "", sortering: "nyeste", tag: null };
@@ -83,12 +84,21 @@ function timeOf(iso) {
 
 // Noter om ventende aflæsninger og udkast, der ikke er gennemset endnu.
 function note(reading) {
+  if (reading.i_gang) {
+    return el(
+      "aside",
+      { class: "note" },
+      el("span", { class: "spinner inline", "aria-hidden": "true" }),
+      el("b", {}, " Aflæser … "),
+      `${plural(reading.originalbilleder.length, "originalbillede", "originalbilleder")} fra ${timeOf(reading.oprettet)} bliver læst lige nu.`,
+    );
+  }
   if (reading.status === "ventende") {
     const retry = async () => {
-      toast("Prøver aflæsningen igen …");
-      const result = await send(`${readingUrl(reading.id)}/proev-igen`, { method: "POST" }, "Aflæsningen kunne ikke prøves igen nu.");
-      if (result && result.status === "udkast" && result.udkast.length) go(href.review(result.id, result.udkast[0].nr));
-      else if (result) toast(result.fejl ? `Aflæsningen lykkedes ikke: ${result.fejl}` : "Aflæsningen lykkedes ikke. Den prøves igen senere.");
+      const started = await send(`${readingUrl(reading.id)}/proev-igen`, { method: "POST" }, "Aflæsningen kunne ikke prøves igen nu.");
+      if (!started) return;
+      showNotes();
+      afterReading(await waitForReading(reading.id));
       showNotes();
     };
     const discard = async () => {
@@ -123,9 +133,14 @@ function note(reading) {
   );
 }
 
+let notesTimer = null;
+
 async function showNotes() {
+  clearTimeout(notesTimer);
   const readings = await fetch("api/aflaesninger").then((r) => (r.ok ? r.json() : []), () => []);
   document.getElementById("notes").replaceChildren(...readings.map(note));
+  // Mens en aflæsning kører, opdateres noten af sig selv, så resultatet kommer frem uden at genindlæse siden.
+  if (readings.some((reading) => reading.i_gang) && currentRoute().view === "forside") notesTimer = setTimeout(showNotes, 3000);
 }
 
 let request = 0;

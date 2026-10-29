@@ -1,13 +1,18 @@
 """Ny opskrift: upload, aflæsning, gennemsyn og gem, med den falske aflæser."""
 
+import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any
 
+import logging
+
 import pytest
 from fastapi.testclient import TestClient
 
+from recipe_reader.reader import TechnicalError
 from tests.conftest import FakeReader
 from tests.images import jpeg, size_of
 
@@ -54,9 +59,40 @@ AEBLEKAGE: dict[str, Any] = {
 }
 
 
+@dataclass
+class Finished:
+    """Svaret på at starte en aflæsning, med aflæsningen, som den ser ud, når den er færdig."""
+
+    status_code: int
+    reading: Any
+
+    def json(self) -> Any:
+        return self.reading
+
+
+def wait_for(client: TestClient, reading_id: str) -> Any:
+    """Venter, til aflæsningen, der kører i baggrunden, er færdig."""
+    deadline = time.monotonic() + 5
+    while True:
+        reading = client.get(f"api/aflaesninger/{reading_id}").json()
+        if not reading["i_gang"] or time.monotonic() > deadline:
+            return reading
+        time.sleep(0.01)
+
+
 def start_reading(client: TestClient, *images: bytes) -> Any:
     files = [("billeder", (f"IMG_{i}.JPG", data, "image/jpeg")) for i, data in enumerate(images, start=1)]
-    return client.post("api/aflaesninger", files=files)
+    response = client.post("api/aflaesninger", files=files)
+    if response.status_code != 202:
+        return response
+    return Finished(response.status_code, wait_for(client, response.json()["id"]))
+
+
+def retry_now(client: TestClient, reading_id: str) -> Any:
+    response = client.post(f"api/aflaesninger/{reading_id}/proev-igen")
+    if response.status_code != 202:
+        return response
+    return Finished(response.status_code, wait_for(client, reading_id))
 
 
 def save(client: TestClient, reading_id: str, number: int, draft: dict[str, Any], *, anyway: bool = False) -> Any:
@@ -70,7 +106,7 @@ def test_a_reading_gives_a_draft_with_the_original_images(client: TestClient, fa
 
     response = start_reading(client, jpeg(color="red"), jpeg(color="blue"))
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     reading = response.json()
     assert reading["status"] == "udkast"
     assert len(reading["originalbilleder"]) == 2
@@ -288,3 +324,46 @@ def test_tags_are_saved_in_lower_case_without_duplicates(client: TestClient, fak
     recipe_id = save(client, reading["id"], 1, draft).json()["id"]
 
     assert "tags: [aftensmad, klassiker, æbler]\n" in (library_dir / f"{recipe_id}.md").read_text(encoding="utf-8")
+
+
+def test_the_reading_runs_in_the_background_so_the_upload_answers_at_once(client: TestClient, fake_reader: FakeReader) -> None:
+    fake_reader.udkast = [BOLLER]
+    fake_reader.on_read = lambda: time.sleep(0.5)
+    files = [("billeder", ("IMG_1.JPG", jpeg(), "image/jpeg"))]
+
+    started = time.monotonic()
+    response = client.post("api/aflaesninger", files=files)
+
+    assert time.monotonic() - started < 0.4
+    assert response.status_code == 202
+    assert response.json()["i_gang"] is True
+    assert response.json()["status"] == "ventende"
+    assert [r["i_gang"] for r in client.get("api/aflaesninger").json()] == [True]
+    finished = wait_for(client, response.json()["id"])
+    assert (finished["i_gang"], finished["status"]) == (False, "udkast")
+
+
+def test_a_reading_is_logged_from_start_to_drafts(
+    client: TestClient, fake_reader: FakeReader, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO, logger="recipe_reader")
+    fake_reader.udkast = [BOLLER]
+
+    reading = start_reading(client, jpeg(), jpeg()).json()
+
+    log = caplog.text
+    assert f"Aflæsning {reading['id']} startet med 2 originalbilleder" in log
+    assert f"Aflæsning {reading['id']} gav 1 udkast" in log
+    assert "Boller i karry" in log
+
+
+def test_a_failed_reading_is_logged_with_the_reason_and_the_next_attempt(
+    client: TestClient, fake_reader: FakeReader, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO, logger="recipe_reader")
+    fake_reader.error = TechnicalError("Ingen forbindelse til aflæsningstjenesten")
+
+    reading = start_reading(client, jpeg()).json()
+
+    assert f"Aflæsning {reading['id']} lykkedes ikke (forsøg 1): Ingen forbindelse til aflæsningstjenesten" in caplog.text
+    assert "Næste forsøg" in caplog.text

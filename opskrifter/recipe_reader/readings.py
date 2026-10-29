@@ -6,9 +6,11 @@ Søgeindekset ignorerer mappen. Originalbillederne gemmes, *før* aflæseren kal
 """
 
 import json
+import logging
 import secrets
 import shutil
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -18,6 +20,8 @@ from . import images, recipe_format
 from .files import write_atomically
 from .reader import DraftIngredient, Reader, TechnicalError, Udkast
 from .recipe_format import Ingredient, IngredientGroup, Opskrift
+
+logger = logging.getLogger(__name__)
 
 FOLDER = ".aflaesninger"
 STATE = "aflaesning.json"
@@ -84,6 +88,8 @@ class Reading:
     naeste_forsoeg: datetime | None = None
     fejl: str | None = None
     """Grunden til, at en ventende aflæsning ikke lykkedes sidst."""
+    i_gang: bool = False
+    """Om aflæsningen kører lige nu. Gemmes ikke, for en genstart afbryder den."""
     automatisk: bool = True
     """Om baggrundsopgaven prøver igen. Ved en ugyldig API-nøgle eller afviste billeder venter den på "prøv nu"."""
 
@@ -108,36 +114,61 @@ class Readings:
         """Aflæsninger, der bliver aflæst lige nu, så den samme ikke aflæses to gange på én gang."""
 
     def start(self, images: list[bytes]) -> Reading:
-        """Gemmer originalbillederne og aflæser dem. En teknisk fejl giver en ventende aflæsning."""
+        """Gemmer originalbillederne og starter aflæsningen i baggrunden. Svaret kommer med det samme,
+        så en lang aflæsning ikke holder browseren hen. En teknisk fejl giver en ventende aflæsning."""
         now = datetime.now().replace(microsecond=0)
         reading_id = f"{now:%Y%m%d-%H%M%S}-{secrets.token_hex(2)}"
         folder = self.directory / reading_id
+        folder.mkdir(parents=True)
+        names = [f"{i}.jpg" for i in range(1, len(images) + 1)]
+        for name, data in zip(names, images):
+            (folder / name).write_bytes(data)
+        reading = Reading(id=reading_id, oprettet=now, billeder=names, status="ventende")
         with self._lock:
-            self._busy.add(reading_id)
-        try:
-            folder.mkdir(parents=True)
-            names = [f"{i}.jpg" for i in range(1, len(images) + 1)]
-            for name, data in zip(names, images):
-                (folder / name).write_bytes(data)
-            reading = Reading(id=reading_id, oprettet=now, billeder=names, status="ventende")
             self._save(reading)
-            return self._perform(reading)
-        finally:
-            with self._lock:
-                self._busy.discard(reading_id)
+            self._busy.add(reading_id)
+        logger.info("Aflæsning %s startet med %d %s", reading_id, len(names), "originalbillede" if len(names) == 1 else "originalbilleder")
+        self._in_background(reading)
+        return self.get(reading_id)
 
-    def retry(self, reading_id: str) -> Reading:
-        """Prøver en ventende aflæsning igen nu. Er den allerede ved at blive aflæst, sker der ikke mere."""
+    def retry_in_background(self, reading_id: str) -> Reading:
+        """Prøver en ventende aflæsning igen nu, i baggrunden. Er den allerede ved at blive aflæst, sker der ikke mere."""
         with self._lock:
             reading = self.get(reading_id)
             if reading.status != "ventende" or reading_id in self._busy:
                 return reading
             self._busy.add(reading_id)
+        logger.info("Aflæsning %s prøves igen nu", reading_id)
+        self._in_background(reading)
+        return self.get(reading_id)
+
+    def retry(self, reading_id: str) -> Reading:
+        """Prøver en ventende aflæsning igen og venter på resultatet. Bruges af baggrundsopgaven."""
+        with self._lock:
+            reading = self.get(reading_id)
+            if reading.status != "ventende" or reading_id in self._busy:
+                return reading
+            self._busy.add(reading_id)
+        logger.info("Aflæsning %s prøves igen automatisk", reading_id)
         try:
             return self._perform(reading)
         finally:
             with self._lock:
                 self._busy.discard(reading_id)
+
+    def _in_background(self, reading: Reading) -> None:
+        """Aflæser i en tråd. Aflæsningen er markeret som i gang, til tråden er færdig."""
+
+        def run() -> None:
+            try:
+                self._perform(reading)
+            except Exception:
+                logger.exception("Aflæsning %s fejlede uventet", reading.id)
+            finally:
+                with self._lock:
+                    self._busy.discard(reading.id)
+
+        threading.Thread(target=run, name=f"aflaesning-{reading.id}", daemon=True).start()
 
     def due(self, now: datetime) -> list[str]:
         """Ventende aflæsninger, der skal prøves igen automatisk nu.
@@ -157,6 +188,7 @@ class Readings:
     def _perform(self, reading: Reading) -> Reading:
         """Kalder aflæseren og gemmer resultatet: udkast, eller tidspunktet for næste forsøg."""
         images = [(self.directory / reading.id / name).read_bytes() for name in reading.billeder]
+        started = time.monotonic()
         try:
             drafts = self.reader.read(images)
         except TechnicalError as error:
@@ -165,7 +197,16 @@ class Readings:
             reading.automatisk = error.retry_automatically
             delay = min(RETRY_FIRST * 2 ** (reading.forsoeg - 1), RETRY_MAX)
             reading.naeste_forsoeg = datetime.now().replace(microsecond=0) + delay if reading.automatisk else None
+            next_attempt = f"Næste forsøg kl. {reading.naeste_forsoeg:%H:%M}." if reading.naeste_forsoeg else "Venter på, at du trykker \"prøv igen\"."
+            logger.warning(
+                "Aflæsning %s lykkedes ikke (forsøg %d): %s %s (efter %.0f s)",
+                reading.id, reading.forsoeg, error, next_attempt, time.monotonic() - started,
+            )
         else:
+            titles = ", ".join(udkast.titel or "uden titel" for udkast in drafts)
+            logger.info(
+                "Aflæsning %s gav %d udkast på %.0f s: %s", reading.id, len(drafts), time.monotonic() - started, titles or "ingen opskrifter"
+            )
             reading.status = "udkast"
             reading.udkast = [Draft(nr=i, udkast=udkast) for i, udkast in enumerate(drafts, start=1)]
             reading.fejl = reading.naeste_forsoeg = None
@@ -192,7 +233,9 @@ class Readings:
     def get(self, reading_id: str) -> Reading:
         state = self._folder(reading_id) / STATE
         try:
-            data = json.loads(state.read_text(encoding="utf-8"))
+            # Under låsen, så filen ikke læses, mens baggrundstråden skriver den.
+            with self._lock:
+                data = json.loads(state.read_text(encoding="utf-8"))
         except (OSError, ValueError) as error:
             raise ReadingNotFound(reading_id) from error
         return Reading(
@@ -205,6 +248,7 @@ class Readings:
             naeste_forsoeg=datetime.fromisoformat(data["naeste_forsoeg"]) if data.get("naeste_forsoeg") else None,
             fejl=data.get("fejl"),
             automatisk=data.get("automatisk", True),
+            i_gang=reading_id in self._busy,
         )
 
     def dish_photo(self, reading_id: str, nr: int, longest_side: int) -> bytes | None:

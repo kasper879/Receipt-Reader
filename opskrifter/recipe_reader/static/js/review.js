@@ -3,7 +3,7 @@ import { action, el, imageButtons, joined, json, present, send, toast } from "./
 import { draftEditor, editable, originalsPanel, saveBox, toDraft } from "./editor.js";
 import { plural } from "./format.js";
 import { back } from "./recipe.js";
-import { go, href } from "./routes.js";
+import { currentRoute, go, href } from "./routes.js";
 
 const readingUrl = (id) => `api/aflaesninger/${encodeURIComponent(id)}`;
 
@@ -45,12 +45,43 @@ export function showNew() {
   );
 }
 
+// Aflæsningen kører i baggrunden på serveren. Her ventes, til den er færdig, og der vises, hvor længe den har kørt.
+export async function waitForReading(readingId, onTick = () => {}) {
+  const started = Date.now();
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    onTick(Math.round((Date.now() - started) / 1000));
+    const reading = await fetch(readingUrl(readingId)).then((r) => (r.ok ? r.json() : null), () => undefined);
+    // undefined: ingen forbindelse lige nu, så der prøves igen. null: aflæsningen er kasseret.
+    if (reading === null || (reading && !reading.i_gang)) return reading;
+  }
+}
+
+// Fortæller, hvordan en færdig aflæsning gik, og går videre til gennemsynet eller forsiden.
+export function afterReading(reading) {
+  if (!reading) return go(href.library);
+  if (reading.status === "ventende") {
+    toast(
+      reading.automatisk
+        ? `Aflæsningen lykkedes ikke nu: ${reading.fejl} Billederne er gemt, og den prøves igen senere.`
+        : `Billederne er gemt, men aflæsningen venter på dig: ${reading.fejl}`,
+    );
+    return go(href.library);
+  }
+  if (!reading.udkast.length) {
+    toast(reading.fejl || "Aflæsningen fandt ingen opskrifter på billederne.");
+    return go(href.library);
+  }
+  go(href.review(reading.id, reading.udkast[0].nr));
+}
+
 async function read() {
   const view = document.getElementById("ny");
   const body = new FormData();
   for (const file of picked) body.append("billeder", file);
   view.querySelectorAll("button").forEach((button) => (button.disabled = true));
-  view.append(el("div", { class: "reading", role: "status" }, el("span", { class: "spinner", "aria-hidden": "true" }), "Aflæser opskriften … Det tager typisk et halvt minut."));
+  const status = el("span", {}, "Sender billederne …");
+  view.append(el("div", { class: "reading", role: "status" }, el("span", { class: "spinner", "aria-hidden": "true" }), status));
   let response;
   try {
     response = await fetch("api/aflaesninger", { method: "POST", body });
@@ -64,18 +95,13 @@ async function read() {
     return;
   }
   picked = [];
-  const reading = await response.json();
-  if (reading.status === "ventende") {
-    toast(
-      reading.automatisk
-        ? "Billederne er gemt. Aflæsningen kunne ikke gennemføres nu, så den prøves igen senere."
-        : `Billederne er gemt, men aflæsningen venter på dig: ${reading.fejl}`,
-    );
-    go(href.library);
-  } else {
-    go(reading.udkast.length ? href.review(reading.id, reading.udkast[0].nr) : href.library);
-    if (!reading.udkast.length) toast(reading.fejl || "Aflæsningen fandt ingen opskrifter på billederne.");
-  }
+  const started = await response.json();
+  status.textContent = "Aflæser opskriften … Det tager typisk et halvt til et helt minut. Du kan godt forlade siden, så kommer resultatet på forsiden.";
+  const reading = await waitForReading(started.id, (seconds) => {
+    status.textContent = `Aflæser opskriften … ${seconds} s. Du kan godt forlade siden, så kommer resultatet på forsiden.`;
+  });
+  // Har brugeren forladt siden imens, vises resultatet som en note på forsiden i stedet.
+  if (currentRoute().view === "ny") afterReading(reading);
 }
 
 // ---------------- Gennemsyn ----------------

@@ -15,7 +15,7 @@ from recipe_reader.reader import ConfigurationError, RejectedError, TechnicalErr
 from recipe_reader.settings import Settings
 from tests.conftest import FakeReader
 from tests.images import jpeg
-from tests.test_new_recipe import BOLLER, start_reading
+from tests.test_new_recipe import BOLLER, retry_now, start_reading, wait_for
 
 Restart = Callable[[], AbstractContextManager[TestClient]]
 
@@ -58,7 +58,7 @@ def test_retries_wait_longer_each_time(client: TestClient, fake_reader: FakeRead
     reading = pending(client, fake_reader)
     first = datetime.fromisoformat(reading["naeste_forsoeg"]) - datetime.now()
 
-    second_attempt = client.post(f"api/aflaesninger/{reading['id']}/proev-igen").json()
+    second_attempt = retry_now(client, reading["id"]).json()
     second = datetime.fromisoformat(second_attempt["naeste_forsoeg"]) - datetime.now()
 
     assert timedelta(seconds=50) < first <= timedelta(minutes=1)
@@ -71,9 +71,9 @@ def test_retry_now_succeeds_and_gives_drafts(client: TestClient, fake_reader: Fa
     fake_reader.error = None
     fake_reader.udkast = [BOLLER]
 
-    retried = client.post(f"api/aflaesninger/{reading['id']}/proev-igen")
+    retried = retry_now(client, reading["id"])
 
-    assert retried.status_code == 200
+    assert retried.status_code == 202
     assert retried.json()["status"] == "udkast"
     assert [draft["titel"] for draft in retried.json()["udkast"]] == ["Boller i karry"]
     assert retried.json()["fejl"] is None
@@ -163,7 +163,7 @@ def test_a_configuration_error_is_not_retried_automatically_but_can_be_retried_n
 
         fake_reader.error = None
         fake_reader.udkast = [BOLLER]
-        assert client.post(f"api/aflaesninger/{reading['id']}/proev-igen").json()["status"] == "udkast"
+        assert retry_now(client, reading["id"]).json()["status"] == "udkast"
 
 
 def test_a_rejected_reading_is_not_retried_automatically(settings: Settings, fake_reader: FakeReader) -> None:

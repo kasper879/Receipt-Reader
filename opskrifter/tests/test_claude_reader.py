@@ -245,3 +245,25 @@ def test_the_prompt_asks_for_a_photo_of_the_dish() -> None:
     schema = body["output_config"]["format"]["schema"]["properties"]["opskrifter"]["items"]
     assert "retbillede_omraade" in schema["required"]
     assert "foto af den færdige ret" in body["system"]
+
+
+def test_the_model_tokens_and_time_of_a_reading_are_logged(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="recipe_reader")
+    answer = {**message(json.dumps({"opskrifter": [BOLLER]})), "usage": {"input_tokens": 4321, "output_tokens": 987}}
+
+    reader_with(answering(200, answer)).read([jpeg(), jpeg()])
+
+    assert "claude-opus-5-5" in caplog.text
+    assert "4321 input-tokens" in caplog.text
+    assert "987 output-tokens" in caplog.text
+    assert API_KEY not in caplog.text
+
+
+def test_the_client_waits_at_most_two_minutes_and_retries_once(tmp_path: Any) -> None:
+    settings = Settings(library_dir=tmp_path, index_path=tmp_path / "index.sqlite", api_key=API_KEY)
+
+    reader = reader_from_settings(settings)
+
+    assert isinstance(reader, ClaudeReader)
+    assert reader.client.max_retries == 1
+    assert reader.client.timeout.read == 120  # type: ignore[union-attr]
