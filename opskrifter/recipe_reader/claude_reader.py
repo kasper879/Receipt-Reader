@@ -30,7 +30,7 @@ PROMPT = """Du aflæser fotograferede opskrifter fra kogebøger, håndskrevne ko
 Svar med JSON efter skemaet. Kontrakten er:
 - Alt skrives på dansk. Oversæt titel, ingredienser, trin og noter, hvis originalen er på et andet sprog.
 - Alle enheder er metriske. Omregn cups, ounces, pounds, fluid ounces, tablespoons og teaspoons til dl, g, kg, ml, spsk og tsk, og °F til °C i teksten. Rund pænt af, fx 1 cup = 2,4 dl, 1 oz = 28 g.
-- Felter, der ikke står i originalen, er null. Gæt aldrig portioner, tider, kilde eller mængder. Tags er en tom liste, medmindre originalen selv nævner kategorier.
+- Felter, der ikke står i originalen, er null. Gæt aldrig portioner, tider, kilde eller mængder. Tags er en tom liste, medmindre originalen selv nævner kategorier. Tags skrives med små bogstaver, fx "aftensmad".
 - Ingrediensgrupper bevares, fx "Til sovsen". Ingredienser før den første gruppe har gruppen null.
 - En ingrediens har en mængde som tal (fx 1.5 for 1½), en enhed fra listen eller null og et navn med resten af linjen, fx "løg, finthakket". En ingrediens uden mængde, fx "salt og peber", har mængde og enhed null.
 - Trin skrives uden nummerering, ét trin pr. element. Noter er tips eller kommentarer fra originalen, der ikke er trin.

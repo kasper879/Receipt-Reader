@@ -185,3 +185,12 @@ def test_a_title_that_is_not_changed_needs_no_confirmation(client: TestClient, w
     draft["trin"] = ["Kog bollerne."]
 
     assert update(client, "boller-i-karry-2", draft).status_code == 200
+
+
+def test_edited_tags_are_saved_in_lower_case(client: TestClient, write_file: WriteFile) -> None:
+    write_file("boller-i-karry.md", BOLLER)
+    draft = {**as_draft(client.get("api/opskrifter/boller-i-karry").json()), "tags": ["Aftensmad", "Klassiker"]}
+
+    update(client, "boller-i-karry", draft)
+
+    assert client.get("api/opskrifter/boller-i-karry").json()["tags"] == ["aftensmad", "klassiker"]

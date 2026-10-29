@@ -36,7 +36,8 @@ def as_recipe(udkast: Udkast) -> Opskrift:
         portioner=udkast.portioner,
         forberedelse=udkast.forberedelse,
         total=udkast.total,
-        tags=[tag.strip() for tag in udkast.tags if tag.strip()],
+        # Tags skrives med små bogstaver, så "Aftensmad" og "aftensmad" er det samme tag i filteret.
+        tags=list(dict.fromkeys(tag.strip().lower() for tag in udkast.tags if tag.strip())),
         kilde=text_or_none(udkast.kilde),
         ingredienser=[
             IngredientGroup(gruppe=text_or_none(group.gruppe), linjer=lines)

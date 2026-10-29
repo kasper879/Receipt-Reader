@@ -278,3 +278,13 @@ def test_unknown_readings_and_drafts_give_404(client: TestClient, fake_reader: F
     assert save(client, reading["id"], 2, BOLLER).status_code == 404
     assert client.delete(f"api/aflaesninger/{reading['id']}/udkast/9").status_code == 404
     assert client.get(f"api/aflaesninger/{reading['id']}/billeder/aflaesning.json").status_code == 404
+
+
+def test_tags_are_saved_in_lower_case_without_duplicates(client: TestClient, fake_reader: FakeReader, library_dir: Path) -> None:
+    draft = {**BOLLER, "tags": ["Aftensmad", "aftensmad", " Klassiker ", "ÆBLER"]}
+    fake_reader.udkast = [draft]
+    reading = start_reading(client, jpeg()).json()
+
+    recipe_id = save(client, reading["id"], 1, draft).json()["id"]
+
+    assert "tags: [aftensmad, klassiker, æbler]\n" in (library_dir / f"{recipe_id}.md").read_text(encoding="utf-8")
