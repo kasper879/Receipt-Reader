@@ -230,3 +230,11 @@ a.row:hover .row-t { text-decoration: underline; text-underline-offset: 3px; }
 .dup b { color: var(--acc); }
 .dup-actions { display: grid; gap: 8px; margin-top: 10px; }
 @media (min-width: 500px) { .dup-actions { grid-template-columns: 1fr 1fr; } }
+
+/* Redigering: billederne og "Tilføj originalbilleder" i samme kolonne. */
+.review-side { display: contents; }
+.add-originals { font: 13px var(--sans); text-align: center; margin: 0; padding: 0 16px 10px; background: var(--paper); }
+@media (min-width: 900px) {
+  .review-side { display: block; position: sticky; top: 0; height: 100vh; border-right: 1px solid var(--rule); }
+  .review-side .review-img { height: auto; border: 0; }
+}

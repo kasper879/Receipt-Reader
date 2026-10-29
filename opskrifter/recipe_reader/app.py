@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from . import images, reading_api, titles
 from .library import Entry, HasWarning, Library, NotFound
 from .reader import Reader, UnconfiguredReader
-from .readings import ReadingNotFound, Readings
+from .readings import ReadingNotFound, Readings, as_recipe
 from .search_index import SearchIndex, Sorting
 from .settings import Settings
 
@@ -78,6 +78,22 @@ def create_app(settings: Settings, reader: Reader | None = None, retry_check_sec
 
     @app.get("/api/opskrifter/{recipe_id}")
     def get_recipe(recipe_id: str) -> dict[str, Any]:
+        return _details(_get(recipe_id))
+
+    @app.put("/api/opskrifter/{recipe_id}", response_model=None)
+    def update_recipe(recipe_id: str, body: reading_api.SaveBody) -> dict[str, Any] | JSONResponse:
+        """Opdaterer en gemt opskrift. Ligner titlen en anden opskrift, afvises det uden bekræftelse."""
+        _get(recipe_id)
+        similar = similar_recipes(body.udkast.titel, recipe_id)
+        if similar and not body.gem_alligevel:
+            return reading_api.similar_rejection(similar)
+        library.update(recipe_id, as_recipe(body.udkast))
+        return _details(_get(recipe_id))
+
+    @app.post("/api/opskrifter/{recipe_id}/originalbilleder")
+    def add_originals(recipe_id: str, billeder: list[UploadFile]) -> dict[str, Any]:
+        _get(recipe_id)
+        library.add_originals(recipe_id, [_prepared(upload, images.ORIGINAL_IMAGE_SIZE) for upload in billeder])
         return _details(_get(recipe_id))
 
     @app.put("/api/opskrifter/{recipe_id}/vurdering")

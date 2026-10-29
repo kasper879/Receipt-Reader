@@ -291,8 +291,9 @@ export function saveBox({ label, exceptId, onSave, onCancel, extra = [] }) {
   // Advarslen opdateres, mens titlen skrives.
   function check(title) {
     clearTimeout(timer);
+    // Et svar på en ældre titel ignoreres, så advarslen altid passer til titlen, som den står nu.
+    const current = ++request;
     timer = setTimeout(async () => {
-      const current = ++request;
       const params = new URLSearchParams({ titel: title });
       if (exceptId) params.set("undtagen", exceptId);
       try {

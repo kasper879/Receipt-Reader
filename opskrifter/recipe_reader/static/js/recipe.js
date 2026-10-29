@@ -121,7 +121,8 @@ function tools(recipe, portions) {
   const photo = recipe.retbillede
     ? [action("Skift retbillede", upload), action("Fjern retbillede", remove)]
     : [action("Tilføj retbillede", upload)];
-  return el("nav", { class: "tools" }, ...joined([...photo, action("Slet", () => trash(recipe))]));
+  const editLink = el("a", { href: href.edit(recipe.id) }, "Redigér");
+  return el("nav", { class: "tools" }, ...joined([editLink, ...photo, action("Slet", () => trash(recipe))]));
 }
 
 function renderWarning(recipe) {

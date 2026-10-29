@@ -117,6 +117,33 @@ class Library:
         _write(self.directory / f"{recipe_id}.md", recipe_format.write(opskrift))
         return recipe_id
 
+    def update(self, recipe_id: str, opskrift: Opskrift) -> None:
+        """Opdaterer en gemt opskrift i samme fil. Filnavnet bevares, også når titlen ændres,
+        så Samba-stier ikke brydes. Vurdering, billeder og oprettet-dato følger med uændret."""
+        path = self._writable(recipe_id)
+        current = self._read(path).opskrift
+        opskrift = replace(
+            opskrift,
+            vurdering=current.vurdering,
+            oprettet=current.oprettet,
+            retbillede=current.retbillede,
+            originalbilleder=current.originalbilleder,
+        )
+        _write(path, recipe_format.write(opskrift))
+
+    def add_originals(self, recipe_id: str, jpegs: list[bytes]) -> None:
+        """Lægger flere originalbilleder ved siden af filen og tilføjer dem i frontmatter."""
+        path = self._writable(recipe_id)
+        names = list(self._read(path).opskrift.originalbilleder)
+        n = 1
+        for data in jpegs:
+            while f"{recipe_id}.{n}.jpg" in names or (self.directory / f"{recipe_id}.{n}.jpg").exists():
+                n += 1
+            name = f"{recipe_id}.{n}.jpg"
+            _write_bytes(self.directory / name, data)
+            names.append(name)
+        _write(path, recipe_format.set_field(path.read_bytes().decode("utf-8"), "originalbilleder", names))
+
     def set_rating(self, recipe_id: str, rating: int | None) -> None:
         """Skriver vurderingen i filen. Resten af filen er uændret."""
         path = self._writable(recipe_id)

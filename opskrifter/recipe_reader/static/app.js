@@ -1,4 +1,5 @@
 // Indgangen til frontenden: tema og navigation mellem skærmene. Skærmene ligger i js/.
+import * as edit from "./js/edit.js";
 import * as library from "./js/library.js";
 import * as recipe from "./js/recipe.js";
 import * as review from "./js/review.js";
@@ -23,6 +24,7 @@ const VIEWS = {
   papirkurv: () => trash.show(),
   ny: () => review.showNew(),
   gennemsyn: (id) => review.showReview(id),
+  rediger: (id) => edit.show(id),
 };
 
 async function route() {
