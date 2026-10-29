@@ -11,7 +11,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from recipe_reader.app import create_app
-from recipe_reader.reader import ConfigurationError, TechnicalError
+from recipe_reader.reader import ConfigurationError, RejectedError, TechnicalError
 from recipe_reader.settings import Settings
 from tests.conftest import FakeReader
 from tests.images import jpeg
@@ -145,3 +145,33 @@ def test_a_reading_interrupted_by_a_restart_is_resumed_at_startup(
             time.sleep(0.05)
 
         assert client.get(f"api/aflaesninger/{folder.name}").json()["status"] == "udkast"
+
+
+def test_a_configuration_error_is_not_retried_automatically_but_can_be_retried_now(
+    settings: Settings, fake_reader: FakeReader
+) -> None:
+    with TestClient(create_app(settings, reader=fake_reader, retry_check_seconds=0.05)) as client:
+        fake_reader.error = ConfigurationError("Angiv en API-nøgle i add-on'ens indstillinger.")
+        reading = start_reading(client, jpeg()).json()
+
+        time.sleep(0.4)
+
+        assert len(fake_reader.calls) == 1
+        listed = client.get(f"api/aflaesninger/{reading['id']}").json()
+        assert listed["automatisk"] is False
+        assert listed["naeste_forsoeg"] is None
+
+        fake_reader.error = None
+        fake_reader.udkast = [BOLLER]
+        assert client.post(f"api/aflaesninger/{reading['id']}/proev-igen").json()["status"] == "udkast"
+
+
+def test_a_rejected_reading_is_not_retried_automatically(settings: Settings, fake_reader: FakeReader) -> None:
+    with TestClient(create_app(settings, reader=fake_reader, retry_check_seconds=0.05)) as client:
+        fake_reader.error = RejectedError("Aflæsningstjenesten afviste billederne.")
+        reading = start_reading(client, jpeg()).json()
+
+        time.sleep(0.4)
+
+        assert len(fake_reader.calls) == 1
+        assert client.get(f"api/aflaesninger/{reading['id']}").json()["automatisk"] is False

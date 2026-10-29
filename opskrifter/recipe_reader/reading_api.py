@@ -103,4 +103,5 @@ def reading_view(reading: Reading) -> dict[str, Any]:
         "forsoeg": reading.forsoeg,
         "naeste_forsoeg": reading.naeste_forsoeg.isoformat() if reading.naeste_forsoeg else None,
         "fejl": reading.fejl,
+        "automatisk": reading.automatisk,
     }

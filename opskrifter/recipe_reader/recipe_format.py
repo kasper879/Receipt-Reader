@@ -85,7 +85,7 @@ def parse(text: str) -> Opskrift:
 
 
 def _parse(text: str) -> Opskrift:
-    frontmatter, body = _split_frontmatter(text)
+    frontmatter, body = _split_frontmatter(text.removeprefix(BOM))
     try:
         meta = yaml.safe_load(frontmatter) or {}
     except yaml.YAMLError as error:
@@ -201,17 +201,75 @@ def write(opskrift: Opskrift) -> str:
         "originalbilleder": opskrift.originalbilleder or None,
     }
     lines = ["---", *(f"{key}: {yaml_value(meta[key])}" for key in FIELD_ORDER if meta[key] is not None), "---", ""]
-    lines += ["## Ingredienser", ""]
-    for group in opskrift.ingredienser:
-        if group.gruppe:
-            lines.append(f"### {group.gruppe}")
-        lines += [f"- {format_ingredient(line)}" for line in group.linjer]
-        lines.append("")
-    lines += ["## Fremgangsmåde", ""]
-    lines += [f"{i}. {step}" for i, step in enumerate(opskrift.trin, start=1)]
-    if opskrift.noter:
-        lines += ["", "## Noter", "", opskrift.noter]
+    for heading, content in _section_contents(opskrift):
+        lines += [f"## {heading}", "", *content, *([""] if content else [])]
     return "\n".join(lines).rstrip("\n") + "\n"
+
+
+EDITABLE_FIELDS = ("titel", "portioner", "forberedelse", "total", "tags", "kilde")
+"""Felterne i frontmatter, som rettes i appen. De andre, fx vurdering og billeder, har egne kald."""
+
+
+def update(text: str, opskrift: Opskrift) -> str:
+    """Retter en fil efter en redigeret opskrift. Kun felter, der er ændret, og sektionerne
+    Ingredienser, Fremgangsmåde og Noter skrives. Kommentarer, andre felter, tekst før den
+    første sektion og andre sektioner bevares, som de står."""
+    current = parse(text)
+    for key in EDITABLE_FIELDS:
+        value = getattr(opskrift, key)
+        if value != getattr(current, key):
+            text = set_field(text, key, value or None)
+    bom = BOM if text.startswith(BOM) else ""
+    lines = text.removeprefix(BOM).splitlines(keepends=True)
+    newline = "\r\n" if lines and lines[0].endswith("\r\n") else "\n"
+    end = next((i for i, line in enumerate(lines[1:], start=1) if line.strip() == "---"), 0) if lines and lines[0].strip() == "---" else -1
+    head, body = lines[: end + 1], lines[end + 1 :]
+
+    # Brødteksten delt op i sektioner: teksten før den første `## `, og hver sektion med sin overskrift.
+    chunks: list[list[str]] = [[]]
+    for line in body:
+        if line.startswith("## "):
+            chunks.append([])
+        chunks[-1].append(line)
+    rendered = {heading.lower(): (heading, content) for heading, content in _section_contents(opskrift)}
+
+    def section(heading: str, content: list[str]) -> list[str]:
+        return [f"## {heading}{newline}", newline, *(f"{line}{newline}" for line in content), *([newline] if content else [])]
+
+    out = list(chunks[0])
+    for chunk in chunks[1:]:
+        name = chunk[0][3:].strip().lower()
+        if name in rendered:
+            out += section(*rendered.pop(name))
+        elif name not in KNOWN_SECTIONS:
+            out += chunk
+    for heading, content in rendered.values():
+        if out and out[-1].strip():
+            out.append(newline)
+        out += section(heading, content)
+    result = "".join(head + out).rstrip("\r\n") + newline
+    return bom + result
+
+
+KNOWN_SECTIONS = ("ingredienser", "fremgangsmåde", "noter")
+
+
+def _section_contents(opskrift: Opskrift) -> list[tuple[str, list[str]]]:
+    """Sektionerne, appen skriver, med deres linjer. Noter udelades, når der ingen er."""
+    ingredients: list[str] = []
+    for group in opskrift.ingredienser:
+        if ingredients:
+            ingredients.append("")
+        if group.gruppe:
+            ingredients.append(f"### {group.gruppe}")
+        ingredients += [f"- {format_ingredient(line)}" for line in group.linjer]
+    sections = [
+        ("Ingredienser", ingredients),
+        ("Fremgangsmåde", [f"{i}. {step}" for i, step in enumerate(opskrift.trin, start=1)]),
+    ]
+    if opskrift.noter:
+        sections.append(("Noter", opskrift.noter.splitlines()))
+    return sections
 
 
 def format_ingredient(line: Ingredient) -> str:
@@ -232,8 +290,14 @@ def format_quantity(value: Quantity) -> str:
     return f"{value:g}".replace(".", ",")
 
 
+BOM = "\ufeff"
+"""Et byte order mark forrest i filen, som nogle editorer på Windows skriver. Det bevares."""
+
+
 def set_field(text: str, key: str, value: object) -> str:
     """Sætter ét felt i frontmatter. None fjerner feltet. Resten af filen er byte for byte uændret."""
+    if text.startswith(BOM):
+        return BOM + set_field(text.removeprefix(BOM), key, value)
     lines = text.splitlines(keepends=True)
     newline = "\r\n" if lines and lines[0].endswith("\r\n") else "\n"
     if not lines or lines[0].strip() != "---":

@@ -99,10 +99,10 @@ function note(reading) {
       { class: "note" },
       el("b", {}, "Ventende aflæsning. "),
       `${plural(reading.originalbilleder.length, "originalbillede", "originalbilleder")} fra ${timeOf(reading.oprettet)} venter på at blive læst. `,
-      "Det sker af sig selv, når der er forbindelse igen – eller ",
-      action("prøv nu", retry),
-      ". ",
-      reading.fejl && el("span", { class: "note-reason" }, reading.fejl, " "),
+      // En ugyldig API-nøgle eller afviste billeder prøves ikke igen af sig selv. Så venter aflæsningen på brugeren.
+      ...(reading.automatisk
+        ? ["Det sker af sig selv, når der er forbindelse igen – eller ", action("prøv nu", retry), ". ", reading.fejl && el("span", { class: "note-reason" }, reading.fejl, " ")]
+        : [el("span", { class: "note-reason" }, reading.fejl, " "), "Ret det, og ", action("prøv igen", retry), ". "]),
       action("Kassér billederne", discard, { class: "note-discard" }),
     );
   }

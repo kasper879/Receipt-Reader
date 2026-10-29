@@ -1,7 +1,11 @@
 """Den statiske frontend serveres af samme proces og virker under Ingress' dynamiske sti."""
 
 import re
-from pathlib import PurePosixPath
+import shutil
+import subprocess
+from pathlib import Path, PurePosixPath
+
+import pytest
 
 from fastapi.testclient import TestClient
 
@@ -55,3 +59,18 @@ def test_javascript_modules_are_served_and_only_import_relatively(client: TestCl
                 pending.append(resolved)
 
     assert len(seen) > 1
+
+
+STATIC = Path(__file__).parent.parent / "recipe_reader" / "static"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js er ikke installeret")
+@pytest.mark.parametrize("module", sorted(STATIC.glob("**/*.js")), ids=lambda path: path.name)
+def test_javascript_modules_have_valid_syntax(module: Path, tmp_path: Path) -> None:
+    # Node tolker kun en fil som ES-modul, når den hedder .mjs.
+    copy = tmp_path / f"{module.stem}.mjs"
+    shutil.copyfile(module, copy)
+
+    result = subprocess.run(["node", "--check", str(copy)], capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stderr

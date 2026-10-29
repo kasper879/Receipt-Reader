@@ -14,7 +14,7 @@ import httpx2
 import pytest
 
 from recipe_reader.claude_reader import ClaudeReader, reader_from_settings
-from recipe_reader.reader import ConfigurationError, TechnicalError, UnconfiguredReader
+from recipe_reader.reader import ConfigurationError, RejectedError, TechnicalError, UnconfiguredReader
 from recipe_reader.settings import Settings
 from tests.images import jpeg
 
@@ -103,9 +103,8 @@ def test_no_recipes_on_the_images_gives_an_empty_list() -> None:
         '{"opskrifter": [{"titel": "Halv',  # afbrudt svar
         '{"forkert": []}',
         json.dumps({"opskrifter": [{**BOLLER, "portioner": 0}]}),
-        json.dumps({"opskrifter": [{**BOLLER, "ingredienser": [{"gruppe": None, "linjer": [{"maengde": -1, "enhed": "g", "navn": "smør"}]}]}]}),
     ],
-    ids=["ikke json", "afbrudt", "forkert form", "0 portioner", "negativ mængde"],
+    ids=["ikke json", "afbrudt", "forkert form", "0 portioner"],
 )
 def test_an_invalid_answer_is_a_technical_error_not_half_a_draft(text: str) -> None:
     with pytest.raises(TechnicalError) as raised:
@@ -114,21 +113,45 @@ def test_an_invalid_answer_is_a_technical_error_not_half_a_draft(text: str) -> N
     assert not isinstance(raised.value, ConfigurationError)
 
 
-@pytest.mark.parametrize("stop_reason", ["max_tokens", "refusal"])
-def test_an_answer_that_was_cut_off_or_refused_is_a_technical_error(stop_reason: str) -> None:
-    with pytest.raises(TechnicalError):
-        reader_with(answering(200, message('{"opskrifter": []}', stop_reason))).read([jpeg()])
+def test_a_quantity_of_zero_or_less_means_no_quantity() -> None:
+    lines = [{"maengde": 0, "enhed": "g", "navn": "smør"}, {"maengde": -1, "enhed": None, "navn": "salt"}]
+    answer = {"opskrifter": [{**BOLLER, "ingredienser": [{"gruppe": None, "linjer": lines}]}]}
+
+    [draft] = reader_with(answering(200, message(json.dumps(answer)))).read([jpeg()])
+
+    assert [line.model_dump() for line in draft.ingredienser[0].linjer if not isinstance(line, str)] == [
+        {"maengde": None, "enhed": "g", "navn": "smør"},
+        {"maengde": None, "enhed": None, "navn": "salt"},
+    ]
+
+
+def test_an_answer_that_was_cut_off_is_a_technical_error() -> None:
+    with pytest.raises(TechnicalError) as raised:
+        reader_with(answering(200, message('{"opskrifter": []}', "max_tokens"))).read([jpeg()])
+
+    assert raised.value.retry_automatically
+
+
+def test_a_refusal_is_not_retried_automatically() -> None:
+    with pytest.raises(RejectedError):
+        reader_with(answering(200, message('{"opskrifter": []}', "refusal"))).read([jpeg()])
 
 
 @pytest.mark.parametrize(
     ("status", "kind"),
-    [(500, "api_error"), (529, "overloaded_error"), (503, "api_error"), (429, "rate_limit_error"), (400, "invalid_request_error")],
+    [(500, "api_error"), (529, "overloaded_error"), (503, "api_error"), (429, "rate_limit_error")],
 )
 def test_server_errors_and_rate_limits_are_technical_errors(status: int, kind: str) -> None:
     with pytest.raises(TechnicalError) as raised:
         reader_with(answering(status, error(kind))).read([jpeg()])
 
-    assert not isinstance(raised.value, ConfigurationError)
+    assert raised.value.retry_automatically
+
+
+@pytest.mark.parametrize(("status", "kind"), [(400, "invalid_request_error"), (413, "request_too_large"), (422, "invalid_request_error")])
+def test_a_request_the_service_cannot_use_is_not_retried_automatically(status: int, kind: str) -> None:
+    with pytest.raises(RejectedError):
+        reader_with(answering(status, error(kind))).read([jpeg()])
 
 
 @pytest.mark.parametrize("exception", [httpx2.ConnectError("ingen forbindelse"), httpx2.ReadTimeout("timeout")])

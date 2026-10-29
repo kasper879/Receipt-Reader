@@ -134,3 +134,19 @@ def test_unknown_ids_give_404(client: TestClient) -> None:
     assert client.post("api/papirkurv/findes-ikke/hent-tilbage").status_code == 404
     assert client.delete("api/papirkurv/findes-ikke").status_code == 404
     assert client.delete("api/papirkurv/..").status_code == 404
+
+
+def test_a_trash_folder_without_a_date_of_deletion_is_still_listed(
+    client: TestClient, write_file: WriteFile, library_dir: Path
+) -> None:
+    write_kage(write_file)
+    client.delete("api/opskrifter/kage")
+    (library_dir / ".papirkurv" / "kage" / ".slettet").write_text("ikke en dato", encoding="utf-8")
+    write_file("bolle.md", "---\ntitel: Bolle\n---\n")
+    client.delete("api/opskrifter/bolle")
+    (library_dir / ".papirkurv" / "bolle" / ".slettet").unlink()
+
+    response = client.get("api/papirkurv")
+
+    assert response.status_code == 200
+    assert sorted(item["titel"] for item in response.json()) == ["Bolle", "Kage"]

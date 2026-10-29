@@ -6,17 +6,17 @@ Søgeindekset ignorerer mappen. Originalbillederne gemmes, *før* aflæseren kal
 """
 
 import json
-import os
 import secrets
 import shutil
 import threading
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
 from . import recipe_format
-from .reader import DraftGroup, DraftIngredient, Reader, TechnicalError, Udkast
+from .files import write_atomically
+from .reader import DraftIngredient, Reader, TechnicalError, Udkast
 from .recipe_format import Ingredient, IngredientGroup, Opskrift
 
 FOLDER = ".aflaesninger"
@@ -32,41 +32,23 @@ Status = Literal["ventende", "udkast"]
 def as_recipe(udkast: Udkast) -> Opskrift:
     """Et udkast som opskrift. Ingredienser som tekstlinjer tolkes med filformatets parser."""
     return Opskrift(
-        titel=blank(udkast.titel),
+        titel=text_or_none(udkast.titel),
         portioner=udkast.portioner,
         forberedelse=udkast.forberedelse,
         total=udkast.total,
         tags=[tag.strip() for tag in udkast.tags if tag.strip()],
-        kilde=blank(udkast.kilde),
+        kilde=text_or_none(udkast.kilde),
         ingredienser=[
-            IngredientGroup(gruppe=blank(group.gruppe), linjer=lines)
+            IngredientGroup(gruppe=text_or_none(group.gruppe), linjer=lines)
             for group in udkast.ingredienser
-            if (lines := [line for line in map(_ingredient, group.linjer) if line.navn]) or blank(group.gruppe)
+            if (lines := [line for line in map(_ingredient, group.linjer) if line.navn]) or text_or_none(group.gruppe)
         ],
         trin=[" ".join(step.split()) for step in udkast.trin if step.strip()],
-        noter=blank(udkast.noter),
+        noter=text_or_none(udkast.noter),
     )
 
 
-def as_draft(opskrift: Opskrift) -> Udkast:
-    """En gemt opskrift som udkast, så den kan redigeres i gennemsynets opsætning."""
-    return Udkast(
-        titel=opskrift.titel,
-        portioner=opskrift.portioner,
-        forberedelse=opskrift.forberedelse,
-        total=opskrift.total,
-        tags=opskrift.tags,
-        kilde=opskrift.kilde,
-        ingredienser=[
-            DraftGroup(gruppe=group.gruppe, linjer=[DraftIngredient(**asdict(line)) for line in group.linjer])
-            for group in opskrift.ingredienser
-        ],
-        trin=opskrift.trin,
-        noter=opskrift.noter,
-    )
-
-
-def blank(text: str | None) -> str | None:
+def text_or_none(text: str | None) -> str | None:
     """Tekst uden mellemrum før og efter. Tom tekst er "ikke angivet"."""
     return (text or "").strip() or None
 
@@ -101,6 +83,8 @@ class Reading:
     naeste_forsoeg: datetime | None = None
     fejl: str | None = None
     """Grunden til, at en ventende aflæsning ikke lykkedes sidst."""
+    automatisk: bool = True
+    """Om baggrundsopgaven prøver igen. Ved en ugyldig API-nøgle eller afviste billeder venter den på "prøv nu"."""
 
     def draft(self, nr: int) -> Draft:
         found = next((draft for draft in self.udkast if draft.nr == nr), None)
@@ -136,7 +120,7 @@ class Readings:
                 (folder / name).write_bytes(data)
             reading = Reading(id=reading_id, oprettet=now, billeder=names, status="ventende")
             self._save(reading)
-            return self._read(reading)
+            return self._perform(reading)
         finally:
             with self._lock:
                 self._busy.discard(reading_id)
@@ -149,7 +133,7 @@ class Readings:
                 return reading
             self._busy.add(reading_id)
         try:
-            return self._read(reading)
+            return self._perform(reading)
         finally:
             with self._lock:
                 self._busy.discard(reading_id)
@@ -158,25 +142,33 @@ class Readings:
         """Ventende aflæsninger, der skal prøves igen automatisk nu.
 
         En aflæsning uden tidspunkt for næste forsøg blev afbrudt, fx af en genstart, og genoptages straks."""
+        with self._lock:
+            busy = set(self._busy)
         return [
             r.id
             for r in self.list()
-            if r.status == "ventende" and r.id not in self._busy and (r.naeste_forsoeg is None or r.naeste_forsoeg <= now)
+            if r.status == "ventende"
+            and r.automatisk
+            and r.id not in busy
+            and (r.naeste_forsoeg is None or r.naeste_forsoeg <= now)
         ]
 
-    def _read(self, reading: Reading) -> Reading:
+    def _perform(self, reading: Reading) -> Reading:
+        """Kalder aflæseren og gemmer resultatet: udkast, eller tidspunktet for næste forsøg."""
         images = [(self.directory / reading.id / name).read_bytes() for name in reading.billeder]
         try:
             drafts = self.reader.read(images)
         except TechnicalError as error:
             reading.forsoeg += 1
             reading.fejl = str(error)
+            reading.automatisk = error.retry_automatically
             delay = min(RETRY_FIRST * 2 ** (reading.forsoeg - 1), RETRY_MAX)
-            reading.naeste_forsoeg = datetime.now().replace(microsecond=0) + delay
+            reading.naeste_forsoeg = datetime.now().replace(microsecond=0) + delay if reading.automatisk else None
         else:
             reading.status = "udkast"
             reading.udkast = [Draft(nr=i, udkast=udkast) for i, udkast in enumerate(drafts, start=1)]
             reading.fejl = reading.naeste_forsoeg = None
+            reading.automatisk = True
             if not reading.udkast:
                 reading.fejl = "Aflæsningen fandt ingen opskrifter på billederne."
         with self._lock:
@@ -211,6 +203,7 @@ class Readings:
             forsoeg=data.get("forsoeg", 0),
             naeste_forsoeg=datetime.fromisoformat(data["naeste_forsoeg"]) if data.get("naeste_forsoeg") else None,
             fejl=data.get("fejl"),
+            automatisk=data.get("automatisk", True),
         )
 
     def image(self, reading_id: str, name: str) -> Path:
@@ -264,8 +257,6 @@ class Readings:
             "forsoeg": reading.forsoeg,
             "naeste_forsoeg": reading.naeste_forsoeg.isoformat() if reading.naeste_forsoeg else None,
             "fejl": reading.fejl,
+            "automatisk": reading.automatisk,
         }
-        state = self.directory / reading.id / STATE
-        temp = state.with_name(f".{STATE}.tmp")
-        temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.replace(temp, state)
+        write_atomically(self.directory / reading.id / STATE, json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8"))

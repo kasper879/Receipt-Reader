@@ -83,8 +83,11 @@ def create_app(settings: Settings, reader: Reader | None = None, retry_check_sec
     @app.put("/api/opskrifter/{recipe_id}", response_model=None)
     def update_recipe(recipe_id: str, body: reading_api.SaveBody) -> dict[str, Any] | JSONResponse:
         """Opdaterer en gemt opskrift. Ligner titlen en anden opskrift, afvises det uden bekræftelse."""
-        _get(recipe_id)
-        similar = similar_recipes(body.udkast.titel, recipe_id)
+        current = _get(recipe_id).opskrift
+        # Advarslen gælder kun en ændret titel. Ellers skulle en opskrift, der blev gemt med "Gem alligevel",
+        # bekræftes igen ved hver rettelse.
+        title_changed = titles.normalize(body.udkast.titel or "") != titles.normalize(current.titel or "")
+        similar = similar_recipes(body.udkast.titel, recipe_id) if title_changed else []
         if similar and not body.gem_alligevel:
             return reading_api.similar_rejection(similar)
         library.update(recipe_id, as_recipe(body.udkast))
@@ -167,7 +170,7 @@ def create_app(settings: Settings, reader: Reader | None = None, retry_check_sec
 async def _retry_pending(readings: Readings, interval: float) -> None:
     """Prøver ventende aflæsninger igen i baggrunden, også dem, der ventede, da appen blev startet."""
     while True:
-        for reading_id in readings.due(datetime.now()):
+        for reading_id in await run_in_threadpool(readings.due, datetime.now()):
             try:
                 await run_in_threadpool(readings.retry, reading_id)
             except ReadingNotFound:

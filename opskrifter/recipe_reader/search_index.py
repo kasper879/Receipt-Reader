@@ -37,7 +37,8 @@ class Sorting(StrEnum):
 
 
 _ORDER = {
-    Sorting.NYESTE: "oprettet DESC NULLS LAST, titel COLLATE da",
+    # Inden for samme dato står den senest gemte øverst.
+    Sorting.NYESTE: "oprettet DESC NULLS LAST, mtime_ns DESC, titel COLLATE da",
     Sorting.VURDERING: "vurdering DESC NULLS LAST, titel COLLATE da",
     Sorting.ALFABETISK: "titel COLLATE da",
 }

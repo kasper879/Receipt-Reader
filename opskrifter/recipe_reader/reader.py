@@ -40,9 +40,20 @@ class Udkast(BaseModel):
 class TechnicalError(Exception):
     """Aflæsningen fejlede af tekniske årsager og skal prøves igen senere."""
 
+    retry_automatically = True
+    """Om baggrundsopgaven skal prøve igen. Ellers venter billederne, til brugeren trykker "prøv nu"."""
+
 
 class ConfigurationError(TechnicalError):
     """Aflæsningstjenesten er ikke sat op, fx mangler API-nøglen. Billederne venter, til det er rettet."""
+
+    retry_automatically = False
+
+
+class RejectedError(TechnicalError):
+    """Aflæsningstjenesten kunne ikke bruge billederne, og det samme forsøg vil fejle igen."""
+
+    retry_automatically = False
 
 
 class Reader(Protocol):

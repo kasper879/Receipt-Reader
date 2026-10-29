@@ -16,7 +16,7 @@ import anthropic
 from anthropic.types.beta import BetaContentBlockParam, BetaMessageParam, BetaOutputConfigParam
 from pydantic import BaseModel, ValidationError
 
-from .reader import ConfigurationError, Reader, TechnicalError, UnconfiguredReader, Udkast
+from .reader import ConfigurationError, Reader, RejectedError, TechnicalError, UnconfiguredReader, Udkast
 from .recipe_format import UNITS
 from .settings import Settings
 
@@ -131,23 +131,37 @@ class ClaudeReader:
         except anthropic.NotFoundError as error:
             raise ConfigurationError(f"Modellen {self.model!r} findes ikke. Ret den i add-on'ens indstillinger.") from error
         except anthropic.APIStatusError as error:
-            # 429, 5xx og afviste forespørgsler: billederne venter, og aflæsningen prøves igen senere.
             logger.warning("Aflæsningstjenesten svarede %s (%s)", error.status_code, type(error).__name__)
-            raise TechnicalError(f"Aflæsningstjenesten svarede med fejl {error.status_code}. Den prøves igen senere.") from error
+            if error.status_code == 429 or error.status_code >= 500:
+                # Overbelastet eller utilgængelig lige nu: billederne venter, og aflæsningen prøves igen senere.
+                raise TechnicalError(f"Aflæsningstjenesten svarede med fejl {error.status_code}. Den prøves igen senere.") from error
+            # Andre 4xx, fx for store billeder: det samme forsøg vil fejle igen.
+            raise RejectedError(f"Aflæsningstjenesten kunne ikke bruge billederne (fejl {error.status_code}). Prøv med færre eller mindre billeder.") from error
         except anthropic.APIConnectionError as error:
             logger.warning("Ingen forbindelse til aflæsningstjenesten (%s)", type(error).__name__)
             raise TechnicalError("Der er ingen forbindelse til aflæsningstjenesten. Den prøves igen senere.") from error
 
         if response.stop_reason == "refusal":
-            raise TechnicalError("Aflæsningstjenesten afviste billederne. Prøv igen, eller tag nye billeder.")
+            raise RejectedError("Aflæsningstjenesten afviste billederne. Prøv igen, eller tag nye billeder.")
         if response.stop_reason == "max_tokens":
             raise TechnicalError("Svaret fra aflæsningstjenesten blev afbrudt. Den prøves igen senere.")
         text = "".join(block.text for block in response.content if block.type == "text")
         try:
-            return _Answer.model_validate(json.loads(text)).opskrifter
+            return _Answer.model_validate(_without_empty_quantities(json.loads(text))).opskrifter
         except (ValueError, ValidationError) as error:
             logger.warning("Aflæsningstjenesten gav et svar, der ikke passer til skemaet")
             raise TechnicalError("Aflæsningstjenesten gav et ugyldigt svar. Den prøves igen senere.") from error
+
+
+def _without_empty_quantities(answer: Any) -> Any:
+    """En mængde på 0 eller derunder betyder "ingen mængde". Ellers ville én linje gøre hele svaret ugyldigt."""
+    for recipe in answer.get("opskrifter", []) if isinstance(answer, dict) else []:
+        for group in recipe.get("ingredienser", []) if isinstance(recipe, dict) else []:
+            for line in group.get("linjer", []) if isinstance(group, dict) else []:
+                quantity = line.get("maengde") if isinstance(line, dict) else None
+                if isinstance(quantity, (int, float)) and quantity <= 0:
+                    line["maengde"] = None
+    return answer
 
 
 def reader_from_settings(settings: Settings) -> Reader:

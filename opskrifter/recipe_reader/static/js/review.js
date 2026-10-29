@@ -64,7 +64,11 @@ async function read() {
   picked = [];
   const reading = await response.json();
   if (reading.status === "ventende") {
-    toast("Billederne er gemt. Aflæsningen kunne ikke gennemføres nu, så den prøves igen senere.");
+    toast(
+      reading.automatisk
+        ? "Billederne er gemt. Aflæsningen kunne ikke gennemføres nu, så den prøves igen senere."
+        : `Billederne er gemt, men aflæsningen venter på dig: ${reading.fejl}`,
+    );
     go(href.library);
   } else {
     go(reading.udkast.length ? href.review(reading.id, reading.udkast[0].nr) : href.library);
@@ -102,7 +106,7 @@ function tabs(reading, current) {
   return [el("p", { class: "hint" }, `Aflæsningen fandt ${reading.udkast.length} opskrifter på billederne. Gennemse dem én ad gangen.`), el("nav", { class: "drafttabs" }, ...joined(links))];
 }
 
-async function next(readingId, following) {
+function next(readingId, following) {
   if (following != null) go(href.review(readingId, following));
   else go(href.library);
 }
@@ -121,16 +125,15 @@ export async function showReview(id) {
 
   const box = saveBox({
     label: "Gem i biblioteket",
-    onSave: async (anyway) => {
+    request: async (anyway) => {
       await flushDraft();
-      const response = await fetch(`${readingUrl(reading.id)}/udkast/${draft.nr}/gem`, json("POST", { udkast: toDraft(model), gem_alligevel: anyway }));
-      const result = await response.json().catch(() => null);
-      if (response.status === 409) return result;
-      if (!response.ok) return toast((result && result.detail) || "Opskriften kunne ikke gemmes. Prøv igen."), null;
+      return fetch(`${readingUrl(reading.id)}/udkast/${draft.nr}/gem`, json("POST", { udkast: toDraft(model), gem_alligevel: anyway }));
+    },
+    onSaved: (result) => {
       toast(`„${model.titel.trim() || result.id}“ er gemt i biblioteket.`);
       next(reading.id, result.naeste);
-      return null;
     },
+    failure: "Opskriften kunne ikke gemmes. Prøv igen.",
     onCancel: () => editor.focusTitle(),
     extra: [
       action("Kassér dette udkast", async () => {

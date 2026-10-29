@@ -2,7 +2,7 @@
 //
 // Ingredienser redigeres som tekstlinjer, én pr. ingrediens. De sendes som tekst til API'et,
 // der tolker dem med samme parser som filformatet.
-import { action, el, present } from "./dom.js";
+import { action, el, present, toast } from "./dom.js";
 import { formatDate, ingredientLine } from "./format.js";
 import { openViewer } from "./viewer.js";
 
@@ -54,7 +54,7 @@ function placeCaretAtEnd(node) {
 
 // Et felt, der rettes direkte i teksten. Tomme felter viser en kursiv pladsholder.
 function text(tag, value, placeholder, onInput, { key, multiline = false, onKey, ...attrs } = {}) {
-  const node = el(tag, { ...attrs, contenteditable: "plaintext-only", spellcheck: "true", "data-ph": placeholder, "data-key": key });
+  const node = el(tag, { ...attrs, ...(key && { "data-key": key }), contenteditable: "plaintext-only", spellcheck: "true", "data-ph": placeholder });
   node.textContent = value;
   node.addEventListener("input", () => {
     // Et felt, der er tømt, skal være helt tomt, så pladsholderen vises igen.
@@ -245,12 +245,13 @@ export function originalsPanel(images) {
 }
 
 // Gem-knappen. Ligner titlen en opskrift i biblioteket, erstattes den af en advarsel med "Gem alligevel" og "Annullér".
-export function saveBox({ label, exceptId, onSave, onCancel, extra = [] }) {
+// `request(anyway)` sender gem-forespørgslen. Svarer API'et 409 med lignende titler, vises advarslen.
+export function saveBox({ label, exceptId, request, onSaved, failure, onCancel, extra = [] }) {
   const box = el("div", { class: "savebox" });
   const slot = el("div", {});
   let similar = [];
   let timer = null;
-  let request = 0;
+  let titleCheck = 0;
   let saving = false;
 
   function render() {
@@ -280,8 +281,13 @@ export function saveBox({ label, exceptId, onSave, onCancel, extra = [] }) {
     saving = true;
     render();
     try {
-      const result = await onSave(anyway);
-      if (result && result.lignende) similar = result.lignende;
+      const response = await request(anyway);
+      const result = await response.json().catch(() => null);
+      if (response.status === 409 && result && result.lignende) similar = result.lignende;
+      else if (!response.ok) toast((result && typeof result.detail === "string" && result.detail) || failure);
+      else onSaved(result);
+    } catch {
+      toast(failure);
     } finally {
       saving = false;
       render();
@@ -292,13 +298,13 @@ export function saveBox({ label, exceptId, onSave, onCancel, extra = [] }) {
   function check(title) {
     clearTimeout(timer);
     // Et svar på en ældre titel ignoreres, så advarslen altid passer til titlen, som den står nu.
-    const current = ++request;
+    const current = ++titleCheck;
     timer = setTimeout(async () => {
       const params = new URLSearchParams({ titel: title });
       if (exceptId) params.set("undtagen", exceptId);
       try {
         const response = await fetch(`api/lighed?${params}`);
-        if (response.ok && current === request) {
+        if (response.ok && current === titleCheck) {
           similar = await response.json();
           render();
         }

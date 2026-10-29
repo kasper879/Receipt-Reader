@@ -35,15 +35,12 @@ export async function show(id) {
   const box = saveBox({
     label: "Gem ændringer",
     exceptId: id,
-    onSave: async (anyway) => {
-      const response = await fetch(recipeUrl(id), json("PUT", { udkast: toDraft(model), gem_alligevel: anyway }));
-      const result = await response.json().catch(() => null);
-      if (response.status === 409 && result && result.lignende) return result;
-      if (!response.ok) return toast((result && result.detail) || "Ændringerne kunne ikke gemmes. Prøv igen."), null;
+    request: (anyway) => fetch(recipeUrl(id), json("PUT", { udkast: toDraft(model), gem_alligevel: anyway })),
+    onSaved: () => {
       toast("Ændringerne er gemt.");
       go(href.recipe(id));
-      return null;
     },
+    failure: "Ændringerne kunne ikke gemmes. Prøv igen.",
     onCancel: () => editor.focusTitle(),
     extra: [el("a", { href: href.recipe(id), class: "discard" }, "Annullér redigering")],
   });

@@ -1,5 +1,6 @@
 """Søgning, sortering og tagfilter på biblioteket."""
 
+import os
 from collections.abc import Callable
 from pathlib import Path
 
@@ -118,3 +119,12 @@ def test_index_lives_in_the_data_folder_not_the_library(
     assert titles(client) == ["Kage"]
     assert (tmp_path / "data" / "index.sqlite").is_file()
     assert sorted(p.name for p in library_dir.iterdir()) == ["kage.md"]
+
+
+def test_the_latest_recipe_from_the_same_day_comes_first(client: TestClient, write_file: WriteFile) -> None:
+    first = write_file("boller.md", recipe("Boller", extra="oprettet: 2026-10-29\n"))
+    second = write_file("aeblekage.md", recipe("Æblekage", extra="oprettet: 2026-10-29\n"))
+    os.utime(first, ns=(first.stat().st_atime_ns, 1_700_000_000_000_000_000))
+    os.utime(second, ns=(second.stat().st_atime_ns, 1_800_000_000_000_000_000))
+
+    assert titles(client) == ["Æblekage", "Boller"]

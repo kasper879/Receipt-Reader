@@ -157,3 +157,31 @@ def test_a_file_that_cannot_be_read_cannot_be_edited(client: TestClient, write_f
 
 def test_editing_an_unknown_recipe_gives_404(client: TestClient) -> None:
     assert update(client, "findes-ikke", {"titel": "X"}).status_code == 404
+
+
+def test_comments_unknown_fields_and_extra_sections_are_kept(
+    client: TestClient, write_file: WriteFile, library_dir: Path
+) -> None:
+    write_file(
+        "kage.md",
+        "---\ntitel: Kage   # fra mormor\nsvaerhed: let\nportioner: 4\n---\n\nForord fra kortet.\n\n## Ingredienser\n\n- 3 æg\n\n"
+        "## Fremgangsmåde\n\n1. Bag.\n\n## Variationer\n\nMed citron.\n",
+    )
+    draft = as_draft(client.get("api/opskrifter/kage").json())
+    draft["portioner"] = 6
+
+    update(client, "kage", draft)
+
+    assert (library_dir / "kage.md").read_text(encoding="utf-8") == (
+        "---\ntitel: Kage   # fra mormor\nsvaerhed: let\nportioner: 6\n---\n\nForord fra kortet.\n\n## Ingredienser\n\n- 3 æg\n\n"
+        "## Fremgangsmåde\n\n1. Bag.\n\n## Variationer\n\nMed citron.\n"
+    )
+
+
+def test_a_title_that_is_not_changed_needs_no_confirmation(client: TestClient, write_file: WriteFile) -> None:
+    write_file("boller-i-karry.md", BOLLER)
+    write_file("boller-i-karry-2.md", "---\ntitel: Boller i karry\n---\n")
+    draft = as_draft(client.get("api/opskrifter/boller-i-karry-2").json())
+    draft["trin"] = ["Kog bollerne."]
+
+    assert update(client, "boller-i-karry-2", draft).status_code == 200

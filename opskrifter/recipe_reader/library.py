@@ -10,6 +10,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from . import recipe_format
+from .files import write_atomically
 from .recipe_format import Opskrift
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"}
@@ -29,6 +30,14 @@ def slugify(title: str) -> str:
     text = "".join(char for char in text if not unicodedata.combining(char))
     slug = re.sub(r"[^a-z0-9]+", "-", text).strip("-")[:60].strip("-")
     return slug or "opskrift"
+
+
+def _deleted_at(folder: Path) -> datetime:
+    """Tidspunktet for sletningen. Mangler filen eller er den rettet, bruges mappens ændringstid."""
+    try:
+        return datetime.fromisoformat((folder / DELETED).read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return datetime.fromtimestamp(folder.stat().st_mtime)
 
 
 def _unique(base: str, taken: Callable[[str], bool]) -> str:
@@ -56,14 +65,12 @@ class HasWarning(Exception):
 
 
 def _write(path: Path, text: str) -> None:
-    _write_bytes(path, text.encode("utf-8"))
+    write_atomically(path, text.encode("utf-8"))
 
 
-def _write_bytes(path: Path, data: bytes) -> None:
-    """Skriver atomisk, så en halv fil aldrig ligger i mappen."""
-    temp = path.with_name(f".{path.name}.tmp")
-    temp.write_bytes(data)
-    os.replace(temp, path)
+def _set_field(path: Path, key: str, value: object) -> None:
+    """Sætter ét felt i filens frontmatter. Resten af filen er uændret."""
+    _write(path, recipe_format.set_field(path.read_bytes().decode("utf-8"), key, value))
 
 
 @dataclass
@@ -119,17 +126,10 @@ class Library:
 
     def update(self, recipe_id: str, opskrift: Opskrift) -> None:
         """Opdaterer en gemt opskrift i samme fil. Filnavnet bevares, også når titlen ændres,
-        så Samba-stier ikke brydes. Vurdering, billeder og oprettet-dato følger med uændret."""
+        så Samba-stier ikke brydes. Kun det, man kan rette i appen, skrives. Kommentarer, andre
+        felter og andre sektioner i filen bevares, ligesom vurdering, billeder og oprettet-dato."""
         path = self._writable(recipe_id)
-        current = self._read(path).opskrift
-        opskrift = replace(
-            opskrift,
-            vurdering=current.vurdering,
-            oprettet=current.oprettet,
-            retbillede=current.retbillede,
-            originalbilleder=current.originalbilleder,
-        )
-        _write(path, recipe_format.write(opskrift))
+        _write(path, recipe_format.update(path.read_bytes().decode("utf-8"), opskrift))
 
     def add_originals(self, recipe_id: str, jpegs: list[bytes]) -> None:
         """Lægger flere originalbilleder ved siden af filen og tilføjer dem i frontmatter."""
@@ -140,21 +140,19 @@ class Library:
             while f"{recipe_id}.{n}.jpg" in names or (self.directory / f"{recipe_id}.{n}.jpg").exists():
                 n += 1
             name = f"{recipe_id}.{n}.jpg"
-            _write_bytes(self.directory / name, data)
+            write_atomically(self.directory / name, data)
             names.append(name)
-        _write(path, recipe_format.set_field(path.read_bytes().decode("utf-8"), "originalbilleder", names))
+        _set_field(path, "originalbilleder", names)
 
     def set_rating(self, recipe_id: str, rating: int | None) -> None:
         """Skriver vurderingen i filen. Resten af filen er uændret."""
-        path = self._writable(recipe_id)
-        text = path.read_bytes().decode("utf-8")
-        _write(path, recipe_format.set_field(text, "vurdering", rating))
+        _set_field(self._writable(recipe_id), "vurdering", rating)
 
     def set_dish_photo(self, recipe_id: str, jpeg: bytes) -> None:
         """Gemmer retbilledet som `<slug>.ret.jpg` ved siden af filen. Et tidligere retbillede fjernes."""
         path = self._writable(recipe_id)
         name = f"{recipe_id}.ret.jpg"
-        _write_bytes(self.directory / name, jpeg)
+        write_atomically(self.directory / name, jpeg)
         self._replace_dish_photo(path, name)
 
     def remove_dish_photo(self, recipe_id: str) -> None:
@@ -163,7 +161,7 @@ class Library:
     def _replace_dish_photo(self, path: Path, name: str | None) -> None:
         opskrift = self._read(path).opskrift
         old = opskrift.retbillede
-        _write(path, recipe_format.set_field(path.read_bytes().decode("utf-8"), "retbillede", name))
+        _set_field(path, "retbillede", name)
         # Et originalbillede kan også være valgt som retbillede. Det må ikke slettes.
         if old and old != name and old not in opskrift.originalbilleder and (old_path := self._file(old)):
             old_path.unlink()
@@ -202,8 +200,7 @@ class Library:
             md = self._trashed_file(folder.name)
             if md is not None:
                 entry = self._read(md)
-                deleted = datetime.fromisoformat((folder / DELETED).read_text(encoding="utf-8").strip())
-                items.append(Trashed(id=folder.name, titel=entry.opskrift.titel or entry.id, slettet=deleted))
+                items.append(Trashed(id=folder.name, titel=entry.opskrift.titel or entry.id, slettet=_deleted_at(folder)))
         return sorted(items, key=lambda item: item.slettet, reverse=True)
 
     def restore(self, trash_id: str) -> str:

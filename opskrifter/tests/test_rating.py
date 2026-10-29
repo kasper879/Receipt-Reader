@@ -89,3 +89,12 @@ def test_a_file_that_cannot_be_read_is_never_changed(client: TestClient, write_f
 
     assert response.status_code == 409
     assert path.read_text(encoding="utf-8") == broken
+
+
+def test_a_file_with_a_byte_order_mark_keeps_it_and_its_frontmatter(client: TestClient, write_file: WriteFile) -> None:
+    path = write_file("kage.md", "\ufeff---\ntitel: Kage\n---\n\nTekst\n".encode("utf-8"))
+
+    assert client.get("api/opskrifter/kage").json()["titel"] == "Kage"
+    assert set_rating(client, "kage", 3) == 200
+
+    assert path.read_bytes() == "\ufeff---\ntitel: Kage\nvurdering: 3\n---\n\nTekst\n".encode("utf-8")
