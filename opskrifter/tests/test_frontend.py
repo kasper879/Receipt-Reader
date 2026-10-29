@@ -33,3 +33,8 @@ def test_assets_and_fonts_are_served_without_external_calls(client: TestClient) 
         assert not font.startswith(("/", "http:", "https:")), font
         assert client.get(f"static/{font}").status_code == 200, font
     assert client.get("static/app.js").status_code == 200
+
+
+def test_the_frontend_is_revalidated_after_an_update(client: TestClient) -> None:
+    for url in ["/", "static/app.js", "static/style.css"]:
+        assert client.get(url).headers["cache-control"] == "no-cache", url

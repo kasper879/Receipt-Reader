@@ -78,6 +78,10 @@ class SearchIndex:
         with self._lock:
             self._sync()
 
+    def close(self) -> None:
+        with self._lock:
+            self._db.close()
+
     def _sync(self) -> None:
         files = {file.id: file for file in self.library.files()}
         known = {

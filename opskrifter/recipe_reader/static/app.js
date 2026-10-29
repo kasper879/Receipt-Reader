@@ -242,7 +242,20 @@ const back = () => el("a", { class: "back", href: "#" }, "← Biblioteket");
 function renderRecipe(recipe, portions) {
   const view = document.getElementById("opskrift");
   if (recipe.advarsel) {
-    view.replaceChildren(back(), el("h1", { class: "title" }, recipe.titel), el("p", { class: "empty" }, "Denne fil kunne ikke læses korrekt."));
+    // Appen overskriver aldrig en fil med advarsel. Den kan kun rettes via Samba.
+    view.replaceChildren(
+      back(),
+      el("h1", { class: "title" }, recipe.titel),
+      el("div", { class: "byline" }, `${recipe.id}.md`),
+      el(
+        "div",
+        { class: "erratum" },
+        el("b", {}, "Denne fil kunne ikke læses korrekt."),
+        el("p", {}, recipe.advarsel),
+        el("p", {}, "Ret filen via Samba, så vises opskriften her."),
+      ),
+      el("pre", { class: "raw" }, recipe.raa),
+    );
     return;
   }
   const factor = recipe.portioner ? portions / recipe.portioner : 1;

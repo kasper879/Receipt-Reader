@@ -89,7 +89,12 @@ def _parse(text: str) -> Opskrift:
     try:
         meta = yaml.safe_load(frontmatter) or {}
     except yaml.YAMLError as error:
-        raise _InvalidFile(f"Frontmatter er ikke gyldig YAML: {error}") from error
+        mark = getattr(error, "problem_mark", None)
+        # +2: linjerne tælles fra 0 i YAML-fejlen, og frontmatter starter efter linjen '---'.
+        where = f" i linje {mark.line + 2}" if mark else ""
+        raise _InvalidFile(
+            f"Frontmatter er ikke gyldig YAML{where}. Tjek klammer, kolon og anførselstegn."
+        ) from error
     if not isinstance(meta, dict):
         raise _InvalidFile("Frontmatter skal bestå af felter som 'titel: …'")
     sections = _sections(body)

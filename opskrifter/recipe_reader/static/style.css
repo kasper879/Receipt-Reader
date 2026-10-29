@@ -135,3 +135,9 @@ a.row:hover .row-t { text-decoration: underline; text-underline-offset: 3px; }
 .controls a.on { color: var(--ink); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 .sec { font: 600 11px var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--acc); border-bottom: 1px solid var(--rule); padding: 22px 0 8px; margin: 0; }
 .sec + .row { border-top: 0; }
+
+/* En fil, der ikke kunne læses: grunden og filens rå indhold. */
+.erratum { border: 2px solid var(--acc); padding: 16px 18px; margin: 18px 0; font-size: 17px; line-height: 1.5; }
+.erratum b { color: var(--acc); }
+.erratum p { margin: 6px 0 0; }
+.raw { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.5 ui-monospace, Consolas, monospace; margin: 0; background: color-mix(in srgb, var(--ink) 6%, transparent); padding: 16px; border-radius: 3px; }

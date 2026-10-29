@@ -51,7 +51,7 @@ def write_file(library_dir: Path) -> Callable[[str, str | bytes], Path]:
         if isinstance(content, bytes):
             path.write_bytes(content)
         else:
-            path.write_text(dedent(content).lstrip(), encoding="utf-8")
+            path.write_text(dedent(content).lstrip(), encoding="utf-8", newline="")
         return path
 
     return write
