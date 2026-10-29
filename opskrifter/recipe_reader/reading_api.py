@@ -68,7 +68,9 @@ def router(readings: Readings, library: Library, similar_recipes: SimilarRecipes
             if similar and not body.gem_alligevel:
                 return similar_rejection(similar)
             originals = [readings.image(reading_id, name) for name in reading.billeder]
-            recipe_id = library.create(as_recipe(body.udkast), originals)
+            # Et foto af retten på originalbillederne bliver retbillede, jf. ticket 13.
+            dish_photo = readings.dish_photo(reading_id, nr, images.DISH_PHOTO_SIZE)
+            recipe_id = library.create(as_recipe(body.udkast), originals, dish_photo)
             following = readings.remove_draft(reading_id, nr)
         return {"id": recipe_id, "naeste": following}
 

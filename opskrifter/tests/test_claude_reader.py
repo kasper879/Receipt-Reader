@@ -80,7 +80,7 @@ def test_the_images_and_the_contract_are_sent_and_drafts_come_back() -> None:
     drafts = reader_with(handler).read(images)
 
     assert [draft.titel for draft in drafts] == ["Boller i karry", "Kartoffelsalat"]
-    assert drafts[0].model_dump() == BOLLER
+    assert drafts[0].model_dump() == {**BOLLER, "retbillede_omraade": None}
     [body] = requests
     assert body["model"] == "claude-opus-5-5"
     content = body["messages"][0]["content"]
@@ -201,3 +201,47 @@ def test_with_an_api_key_the_model_comes_from_the_settings(tmp_path: Any) -> Non
     assert isinstance(reader, ClaudeReader)
     assert reader.model == "claude-sonnet-5-5"
     assert API_KEY not in repr(reader)
+
+
+def test_the_area_of_a_photo_of_the_dish_comes_back() -> None:
+    area = {"billede": 1, "venstre": 0.1, "top": 0.05, "hoejre": 0.6, "bund": 0.5}
+    answer = {"opskrifter": [{**BOLLER, "retbillede_omraade": area}]}
+
+    [draft] = reader_with(answering(200, message(json.dumps(answer)))).read([jpeg()])
+
+    assert draft.retbillede_omraade is not None
+    assert draft.retbillede_omraade.model_dump() == area
+
+
+@pytest.mark.parametrize(
+    "area",
+    [
+        {"billede": 1, "venstre": 0.5, "top": 0.0, "hoejre": 1.4, "bund": 1.0},
+        {"billede": 1, "venstre": 0.5, "top": 0.5, "hoejre": 0.51, "bund": 0.9},
+        {"billede": 0, "venstre": 0.0, "top": 0.0, "hoejre": 1.0, "bund": 1.0},
+        "øverst til venstre",
+    ],
+    ids=["uden for billedet", "for smalt", "billede 0", "ikke et område"],
+)
+def test_an_invalid_area_is_ignored_and_the_draft_is_kept(area: object) -> None:
+    answer = {"opskrifter": [{**BOLLER, "retbillede_omraade": area}]}
+
+    [draft] = reader_with(answering(200, message(json.dumps(answer)))).read([jpeg()])
+
+    assert draft.titel == "Boller i karry"
+    assert draft.retbillede_omraade is None
+
+
+def test_the_prompt_asks_for_a_photo_of_the_dish() -> None:
+    requests: list[dict[str, Any]] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(json.loads(request.content))
+        return httpx2.Response(200, json=message(json.dumps({"opskrifter": []})))
+
+    reader_with(handler).read([jpeg()])
+
+    [body] = requests
+    schema = body["output_config"]["format"]["schema"]["properties"]["opskrifter"]["items"]
+    assert "retbillede_omraade" in schema["required"]
+    assert "foto af den færdige ret" in body["system"]

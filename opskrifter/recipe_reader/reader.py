@@ -8,7 +8,7 @@ ingrediensgrupper bevares. Der er ét udkast pr. opskrift på billederne.
 
 from typing import Annotated, Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class DraftIngredient(BaseModel):
@@ -23,6 +23,29 @@ class DraftGroup(BaseModel):
     """En ingrediens som strukturerede felter eller som tekstlinje, fx "2 spsk karry"."""
 
 
+Fraction = Annotated[float, Field(ge=0, le=1)]
+
+MIN_AREA = 0.05
+"""Den mindste bredde og højde af et retbillede, som brøkdel af originalbilledet."""
+
+
+class DishPhotoArea(BaseModel):
+    """Hvor på originalbillederne der er et foto af den færdige ret: billedets nummer (fra 1) og
+    området som brøkdele af billedets bredde og højde, målt fra øverste venstre hjørne."""
+
+    billede: Annotated[int, Field(ge=1)]
+    venstre: Fraction
+    top: Fraction
+    hoejre: Fraction
+    bund: Fraction
+
+    @model_validator(mode="after")
+    def _has_size(self) -> "DishPhotoArea":
+        if self.hoejre - self.venstre < MIN_AREA or self.bund - self.top < MIN_AREA:
+            raise ValueError("Området for retbilledet er for lille")
+        return self
+
+
 class Udkast(BaseModel):
     """Et udkast til en opskrift. Felter, der ikke står i originalen, er null."""
 
@@ -35,6 +58,8 @@ class Udkast(BaseModel):
     ingredienser: list[DraftGroup] = []
     trin: list[str] = []
     noter: str | None = None
+    retbillede_omraade: DishPhotoArea | None = None
+    """Et foto af retten på originalbillederne, som bliver retbillede, når udkastet gemmes."""
 
 
 class TechnicalError(Exception):

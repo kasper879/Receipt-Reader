@@ -106,6 +106,7 @@ Biblioteket kan søges, sorteres og filtreres på **tags**. En opskrift vises i 
 71. Som bruger vil jeg kunne redigere en gemt opskrift i samme opsætning som gennemsynet, så jeg kan rette fejl senere.
 72. Som bruger vil jeg kunne vælge et retbillede ved at tage et billede eller vælge et fra galleriet, så biblioteket viser den færdige ret.
 73. Som bruger vil jeg kunne skifte eller fjerne retbilledet, så jeg kan bruge et bedre billede.
+73a. Som bruger vil jeg, at et foto af retten på originalbillederne, fx fra en hjemmeside, automatisk bliver opskriftens retbillede, så jeg ikke selv skal beskære det. (Tilføjet efter v1-planen, ticket 13.)
 74. Som bruger vil jeg kunne tilføje flere originalbilleder til en gemt opskrift, så jeg kan gemme en side, jeg manglede.
 75. Som bruger vil jeg kunne slette en opskrift, så den flyttes til papirkurven, så jeg kan fortryde.
 76. Som bruger vil jeg kunne se papirkurven og hente en opskrift tilbage til biblioteket, så en fejlsletning ikke er permanent.
@@ -321,7 +322,6 @@ Den fulde beskrivelse findes i den valgte designprototype på branchen `prototyp
 - Dashboard-kort i HA.
 - Stemmestyring.
 - Import fra hjemmesider eller andre apps.
-- Automatisk beskæring af retbillede ud fra originalbilleder.
 - Brugerstyring og vurdering pr. person. Vurderingen er fælles for husstanden.
 - Valg af aflæsningstjeneste og prompt-design. Det besluttes, når aflæser-adapteren bygges.
 - Automatiske tests af frontenden.

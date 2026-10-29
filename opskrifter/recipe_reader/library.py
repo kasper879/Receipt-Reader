@@ -110,7 +110,7 @@ class Library:
         path = self._file(f"{recipe_id}.md")
         return self._read(path) if path else None
 
-    def create(self, opskrift: Opskrift, originals: list[Path]) -> str:
+    def create(self, opskrift: Opskrift, originals: list[Path], dish_photo: bytes | None = None) -> str:
         """Gemmer en ny opskrift med et filnavn ud fra titlen og originalbillederne ved siden af.
 
         Findes filnavnet, får det et nummer bagi. Billederne kopieres, så udkast fra samme
@@ -120,7 +120,10 @@ class Library:
         names = [f"{recipe_id}.{i}{source.suffix.lower()}" for i, source in enumerate(originals, start=1)]
         for source, name in zip(originals, names):
             shutil.copyfile(source, self.directory / name)
-        opskrift = replace(opskrift, oprettet=date.today(), originalbilleder=names, retbillede=None, vurdering=None)
+        dish_photo_name = f"{recipe_id}.ret.jpg" if dish_photo else None
+        if dish_photo and dish_photo_name:
+            write_atomically(self.directory / dish_photo_name, dish_photo)
+        opskrift = replace(opskrift, oprettet=date.today(), originalbilleder=names, retbillede=dish_photo_name, vurdering=None)
         _write(self.directory / f"{recipe_id}.md", recipe_format.write(opskrift))
         return recipe_id
 

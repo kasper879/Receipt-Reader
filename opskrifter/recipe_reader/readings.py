@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
-from . import recipe_format
+from . import images, recipe_format
 from .files import write_atomically
 from .reader import DraftIngredient, Reader, TechnicalError, Udkast
 from .recipe_format import Ingredient, IngredientGroup, Opskrift
@@ -206,6 +206,18 @@ class Readings:
             automatisk=data.get("automatisk", True),
         )
 
+    def dish_photo(self, reading_id: str, nr: int, longest_side: int) -> bytes | None:
+        """Fotoet af retten fra udkastets område på originalbillederne, beskåret som JPEG. None, hvis der ikke er et."""
+        reading = self.get(reading_id)
+        area = reading.draft(nr).udkast.retbillede_omraade
+        if area is None or area.billede > len(reading.billeder):
+            return None
+        source = self.image(reading_id, reading.billeder[area.billede - 1]).read_bytes()
+        try:
+            return images.crop(source, (area.venstre, area.top, area.hoejre, area.bund), longest_side)
+        except images.InvalidImage:
+            return None
+
     def image(self, reading_id: str, name: str) -> Path:
         reading = self.get(reading_id)
         if name not in reading.billeder:
@@ -216,7 +228,9 @@ class Readings:
         """Gemmer rettelser i et udkast midlertidigt under gennemsynet."""
         with self._lock:
             reading = self.get(reading_id)
-            reading.draft(nr).udkast = udkast
+            draft = reading.draft(nr)
+            # Frontenden kender ikke området for retbilledet, så det beholdes fra aflæsningen.
+            draft.udkast = udkast.model_copy(update={"retbillede_omraade": udkast.retbillede_omraade or draft.udkast.retbillede_omraade})
             self._save(reading)
 
     def remove_draft(self, reading_id: str, nr: int) -> int | None:

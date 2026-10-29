@@ -150,7 +150,16 @@ export async function showReview(id) {
   editor = draftEditor(model, {
     kicker: reading.udkast.length > 1 ? `Gennemsyn · aflæsningen fandt ${reading.udkast.length} opskrifter` : "Gennemsyn · udkast",
     hint: "Aflæsningen gætter ikke: Felter, der ikke stod i originalen, er tomme. Ret direkte i teksten, og udfyld det, du vil.",
-    top: tabs(reading, draft.nr),
+    top: [
+      ...tabs(reading, draft.nr),
+      // Et foto af retten på originalbillederne bliver automatisk retbillede, når udkastet gemmes.
+      draft.retbillede_omraade &&
+        el(
+          "p",
+          { class: "hint dish-hint" },
+          `📷 Fotoet af retten${reading.originalbilleder.length > 1 ? ` på side ${draft.retbillede_omraade.billede}` : ""} bliver opskriftens retbillede. Du kan skifte eller fjerne det, når opskriften er gemt.`,
+        ),
+    ],
     onChange: () => scheduleSave(reading.id, draft.nr, model),
     onTitle: (title) => box.check(title),
   });

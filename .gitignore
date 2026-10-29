@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .mypy_cache/
+
+# Lokale testdata, når appen køres lokalt
+opskrifter/test-bibliotek/
+opskrifter/test-index.sqlite

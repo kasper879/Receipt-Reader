@@ -16,7 +16,7 @@ import anthropic
 from anthropic.types.beta import BetaContentBlockParam, BetaMessageParam, BetaOutputConfigParam
 from pydantic import BaseModel, ValidationError
 
-from .reader import ConfigurationError, Reader, RejectedError, TechnicalError, UnconfiguredReader, Udkast
+from .reader import ConfigurationError, DishPhotoArea, Reader, RejectedError, TechnicalError, UnconfiguredReader, Udkast
 from .recipe_format import UNITS
 from .settings import Settings
 
@@ -39,6 +39,8 @@ Svar med JSON efter skemaet. Kontrakten er:
 - Er der ingen opskrift på billederne, er listen tom.
 
 Tidsfelterne er i minutter: forberedelse er den aktive tid, total er den samlede tid.
+
+Retbillede: Viser et af billederne et foto af den færdige ret, fx på en hjemmeside eller i en kogebog, angiver du, hvor det er, i retbillede_omraade: billede er billedets nummer (1 er det første), og venstre, top, hoejre og bund er fotoets kanter som brøkdele mellem 0 og 1 af billedets bredde og højde, målt fra øverste venstre hjørne. Tag kun selve fotoet med, ikke tekst eller knapper omkring det. Tegninger, ikoner, logoer, personer og fotos af andre retter tæller ikke. Er der ikke et foto af den færdige ret, er retbillede_omraade null.
 """
 
 _NULLABLE_STRING = {"anyOf": [{"type": "string"}, {"type": "null"}]}
@@ -84,8 +86,27 @@ SCHEMA: dict[str, Any] = {
                     },
                     "trin": {"type": "array", "items": {"type": "string"}},
                     "noter": _NULLABLE_STRING,
+                    "retbillede_omraade": {
+                        "anyOf": [
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "billede": {"type": "integer"},
+                                    "venstre": {"type": "number"},
+                                    "top": {"type": "number"},
+                                    "hoejre": {"type": "number"},
+                                    "bund": {"type": "number"},
+                                },
+                                "required": ["billede", "venstre", "top", "hoejre", "bund"],
+                                "additionalProperties": False,
+                            },
+                            {"type": "null"},
+                        ]
+                    },
                 },
-                "required": ["titel", "portioner", "forberedelse", "total", "tags", "kilde", "ingredienser", "trin", "noter"],
+                "required": [
+                    "titel", "portioner", "forberedelse", "total", "tags", "kilde", "ingredienser", "trin", "noter", "retbillede_omraade",
+                ],
                 "additionalProperties": False,
             },
         }
@@ -147,15 +168,21 @@ class ClaudeReader:
             raise TechnicalError("Svaret fra aflæsningstjenesten blev afbrudt. Den prøves igen senere.")
         text = "".join(block.text for block in response.content if block.type == "text")
         try:
-            return _Answer.model_validate(_without_empty_quantities(json.loads(text))).opskrifter
+            return _Answer.model_validate(_cleaned(json.loads(text))).opskrifter
         except (ValueError, ValidationError) as error:
             logger.warning("Aflæsningstjenesten gav et svar, der ikke passer til skemaet")
             raise TechnicalError("Aflæsningstjenesten gav et ugyldigt svar. Den prøves igen senere.") from error
 
 
-def _without_empty_quantities(answer: Any) -> Any:
-    """En mængde på 0 eller derunder betyder "ingen mængde". Ellers ville én linje gøre hele svaret ugyldigt."""
+def _cleaned(answer: Any) -> Any:
+    """Retter småting, der ellers ville gøre hele svaret ugyldigt: En mængde på 0 eller derunder betyder
+    "ingen mængde", og et ugyldigt område for retbilledet ignoreres."""
     for recipe in answer.get("opskrifter", []) if isinstance(answer, dict) else []:
+        if isinstance(recipe, dict) and recipe.get("retbillede_omraade") is not None:
+            try:
+                DishPhotoArea.model_validate(recipe["retbillede_omraade"])
+            except ValidationError:
+                recipe["retbillede_omraade"] = None
         for group in recipe.get("ingredienser", []) if isinstance(recipe, dict) else []:
             for line in group.get("linjer", []) if isinstance(group, dict) else []:
                 quantity = line.get("maengde") if isinstance(line, dict) else None
