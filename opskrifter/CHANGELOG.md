@@ -1,5 +1,11 @@
 # Ændringer
 
+## 0.5.0
+
+- **Til indkøbslisten:** Under ingredienserne i en opskrift lægger "🛒 Til indkøbslisten" ingredienserne på jeres indkøbsliste i Home Assistant, omregnet til de valgte portioner. Fjern fluebenet ved det, du har i forvejen. Ingredienser uden mængde, fx salt og peber, er fravalgt fra start.
+- Ny indstilling `indkoebsliste`: den todo-liste i Home Assistant, der bruges. Standard er `todo.shopping_list`.
+- Add-on'en har nu adgang til Home Assistants API (`homeassistant_api`).
+
 ## 0.4.1
 
 - Knappen "Ny opskrift" og skærmen bagved fortæller, at du også kan hente en opskrift fra et link.

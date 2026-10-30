@@ -29,7 +29,68 @@ function ingredients(recipe, factor) {
         }),
       ),
     ]),
+    recipe.ingredienser.length > 0 && shoppingButton(recipe, factor),
   );
+}
+
+// ---------------- Indkøbslisten ----------------
+
+let shoppingStatus = null;
+
+// Om der er en indkøbsliste i Home Assistant. Spørges kun én gang.
+function shoppingAvailable() {
+  shoppingStatus ??= fetch("api/indkoebsliste")
+    .then((response) => (response.ok ? response.json() : null))
+    .then((status) => Boolean(status && status.tilgaengelig), () => false);
+  return shoppingStatus;
+}
+
+const shoppingItem = (line, factor) => [amount(line, factor), line.navn].filter(Boolean).join(" ");
+
+// Ingredienserne med flueben, omregnet til de valgte portioner. Ingredienser uden mængde, fx "salt og peber", er fravalgt fra start.
+function shoppingPanel(recipe, factor, close) {
+  const boxes = [];
+  const submit = el("button", { type: "submit", class: "save" });
+  const update = () => {
+    const count = boxes.filter((box) => box.checked).length;
+    submit.textContent = count ? `Læg ${count} ${count === 1 ? "vare" : "varer"} på listen` : "Vælg ingredienser";
+    submit.disabled = count === 0;
+  };
+  const groups = recipe.ingredienser.flatMap((group) => [
+    group.gruppe && el("h3", {}, group.gruppe),
+    ...group.linjer.map((line) => {
+      const box = el("input", { type: "checkbox", value: shoppingItem(line, factor), onchange: update });
+      box.checked = line.maengde != null;
+      boxes.push(box);
+      return el("label", { class: "shop-line" }, box, " ", box.value);
+    }),
+  ]);
+  const add = async (event) => {
+    event.preventDefault();
+    submit.disabled = true;
+    const varer = boxes.filter((box) => box.checked).map((box) => box.value);
+    const result = await send(`${recipeUrl(recipe.id)}/indkoebsliste`, json("POST", { varer }), "Varerne kunne ikke lægges på indkøbslisten.");
+    if (result) {
+      toast(`${result.antal} ${result.antal === 1 ? "vare er" : "varer er"} lagt på indkøbslisten.`);
+      close();
+    } else update();
+  };
+  update();
+  return el(
+    "form",
+    { class: "shop-panel", onsubmit: add },
+    el("p", { class: "hint" }, "Vælg det, du skal købe. Mængderne passer til de valgte portioner."),
+    ...present(groups),
+    el("div", { class: "shop-actions" }, submit, el("button", { type: "button", class: "secondary", onclick: close }, "Annullér")),
+  );
+}
+
+function shoppingButton(recipe, factor) {
+  const slot = el("div", { class: "shop" });
+  const closed = () => slot.replaceChildren(el("button", { type: "button", class: "secondary", onclick: opened }, "🛒 Til indkøbslisten"));
+  const opened = () => slot.replaceChildren(shoppingPanel(recipe, factor, closed));
+  shoppingAvailable().then((available) => available && closed());
+  return slot;
 }
 
 function steps(recipe) {

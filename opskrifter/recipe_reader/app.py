@@ -20,11 +20,16 @@ from .reader import Reader, UnconfiguredReader
 from .readings import PageFetcher, ReadingNotFound, Readings, as_recipe
 from .search_index import SearchIndex, Sorting
 from .settings import Settings
+from .shopping_list import ShoppingList, ShoppingListError, shopping_list_from_settings
 from .web_page import WebFetcher
 
 STATIC_DIR = Path(__file__).parent / "static"
 
 logger = logging.getLogger(__name__)
+
+
+class ShoppingBody(BaseModel):
+    varer: list[str]
 
 
 class RatingBody(BaseModel):
@@ -40,10 +45,12 @@ def create_app(
     reader: Reader | None = None,
     retry_check_seconds: float = RETRY_CHECK_SECONDS,
     fetcher: PageFetcher | None = None,
+    shopping_list: ShoppingList | None = None,
 ) -> FastAPI:
     library = Library(settings.library_dir)
     index = SearchIndex(settings.index_path, library, _summary)
     readings = Readings(settings.library_dir, reader or UnconfiguredReader(), fetcher or WebFetcher())
+    shopping = shopping_list or shopping_list_from_settings(settings)
 
     def similar_recipes(title: str | None, except_id: str | None) -> list[dict[str, Any]]:
         """Opskrifter i biblioteket med en titel, der ligner. En fil med advarsel har ingen titel at sammenligne med."""
@@ -104,6 +111,26 @@ def create_app(
         _get(recipe_id)
         library.add_originals(recipe_id, [_prepared(upload, images.ORIGINAL_IMAGE_SIZE) for upload in billeder])
         return _details(_get(recipe_id))
+
+    @app.get("/api/indkoebsliste")
+    def shopping_list_status() -> dict[str, Any]:
+        """Om der er en indkøbsliste i Home Assistant. Ellers skjuler frontenden knappen."""
+        return {"tilgaengelig": shopping.available, "liste": shopping.entity_id}
+
+    @app.post("/api/opskrifter/{recipe_id}/indkoebsliste")
+    def add_to_shopping_list(recipe_id: str, body: ShoppingBody) -> dict[str, int]:
+        """Lægger varerne på indkøbslisten. Frontenden sender dem omregnet til de valgte portioner."""
+        opskrift = _get(recipe_id).opskrift
+        items = [" ".join(item.split()) for item in body.varer if item.strip()]
+        if not items:
+            raise HTTPException(status_code=422, detail="Vælg mindst én ingrediens.")
+        if not shopping.available:
+            raise HTTPException(status_code=503, detail="Indkøbslisten kræver, at appen kører i Home Assistant.")
+        try:
+            shopping.add(items, f"Til {opskrift.titel or recipe_id}")
+        except ShoppingListError as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+        return {"antal": len(items)}
 
     @app.put("/api/opskrifter/{recipe_id}/vurdering")
     def set_rating(recipe_id: str, body: RatingBody) -> dict[str, Any]:

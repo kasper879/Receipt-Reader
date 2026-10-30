@@ -7,6 +7,7 @@ Husstandens opskriftsbibliotek. Hver opskrift er én Markdown-fil i biblioteksma
 - `biblioteksmappe`: Mappen med opskrifterne. Standard er `/share/opskrifter`.
 - `api_noegle`: API-nøglen til Claude API'et (Anthropic), som aflæser de fotograferede opskrifter. Den gemmes som en hemmelighed og logges aldrig. Uden nøgle gemmes billederne som en ventende aflæsning, indtil nøglen er sat.
 - `model`: Claude-modellen, der aflæser billederne. Standard er `claude-opus-5-5`.
+- `indkoebsliste`: Todo-listen i Home Assistant, som "🛒 Til indkøbslisten" lægger ingredienser på. Standard er `todo.shopping_list`, Home Assistants indbyggede indkøbsliste. Find id'et under *Indstillinger → Enheder og tjenester → Entiteter*.
 
 Aflæsningen er det eneste, appen henter fra internettet. Fejler den af tekniske årsager, fx fordi der ikke er forbindelse, venter billederne og prøves igen automatisk.
 
