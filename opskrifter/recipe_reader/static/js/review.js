@@ -36,8 +36,8 @@ export function showNew() {
     ...present([
       back(),
       el("div", { class: "kicker" }, "Ny opskrift"),
-      el("h1", { class: "title" }, "Originalbilleder"),
-      el("p", { class: "hint" }, "Tag et billede af hver side. Fjern et billede, der ikke blev godt, før du sender dem til aflæsning."),
+      el("h1", { class: "title" }, "Billeder eller link"),
+      el("p", { class: "hint" }, "Tag et billede af hver side, eller hent opskriften fra et link nedenfor. Fjern et billede, der ikke blev godt, før du sender billederne til aflæsning."),
       thumbs.length > 0 && el("div", { class: "picks" }, ...thumbs),
       el("div", { class: "pick-buttons" }, ...buttons),
       picked.length > 0 && el("button", { type: "button", class: "save", id: "read-button", onclick: read }, `Aflæs ${plural(picked.length, "billede", "billeder")}`),

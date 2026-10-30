@@ -1,5 +1,9 @@
 # Ændringer
 
+## 0.4.1
+
+- Knappen "Ny opskrift" og skærmen bagved fortæller, at du også kan hente en opskrift fra et link.
+
 ## 0.4.0
 
 - **Importér fra et link:** Indsæt et link til en opskrift på en hjemmeside under "Ny opskrift". Appen henter siden og laver et udkast på dansk med metriske enheder, også fra engelske sider. Sidens billede af retten bliver retbillede, og opskriften linker til den oprindelige side.
