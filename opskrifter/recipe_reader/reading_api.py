@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, UploadFile
+from fastapi import APIRouter, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -13,9 +13,14 @@ from . import images
 from .library import Library
 from .reader import Udkast
 from .readings import Reading, Readings, as_recipe
+from .web_page import InvalidLink, check_link
 
 SimilarRecipes = Callable[[str | None, str | None], list[dict[str, Any]]]
 """Opskrifter med en titel, der ligner, bortset fra opskriften med det givne id."""
+
+
+class LinkBody(BaseModel):
+    link: str
 
 
 class SaveBody(BaseModel):
@@ -40,6 +45,15 @@ def router(readings: Readings, library: Library, similar_recipes: SimilarRecipes
         GET api/aflaesninger/{id}, til `i_gang` er falsk: så er der udkast, eller den er ventende."""
         data = [prepared(upload, images.ORIGINAL_IMAGE_SIZE) for upload in billeder]
         return JSONResponse(reading_view(readings.start(data)), status_code=202)
+
+    @api.post("/aflaesninger/link")
+    def start_from_link(body: LinkBody) -> JSONResponse:
+        """Starter en aflæsning af en opskrift på en hjemmeside i baggrunden (202), ligesom for billeder."""
+        try:
+            link = check_link(body.link)
+        except InvalidLink as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        return JSONResponse(reading_view(readings.start_from_link(link)), status_code=202)
 
     @api.get("/aflaesninger")
     def list_readings() -> list[dict[str, Any]]:
@@ -70,7 +84,7 @@ def router(readings: Readings, library: Library, similar_recipes: SimilarRecipes
             originals = [readings.image(reading_id, name) for name in reading.billeder]
             # Et foto af retten på originalbillederne bliver retbillede, jf. ticket 13.
             dish_photo = readings.dish_photo(reading_id, nr, images.DISH_PHOTO_SIZE)
-            recipe_id = library.create(as_recipe(body.udkast), originals, dish_photo)
+            recipe_id = library.create(as_recipe(body.udkast), originals, dish_photo, link=reading.link)
             following = readings.remove_draft(reading_id, nr)
         return {"id": recipe_id, "naeste": following}
 
@@ -107,4 +121,6 @@ def reading_view(reading: Reading) -> dict[str, Any]:
         "fejl": reading.fejl,
         "automatisk": reading.automatisk,
         "i_gang": reading.i_gang,
+        "link": reading.link,
+        "retbillede": f"{base}/{quote(reading.retbillede)}" if reading.retbillede else None,
     }

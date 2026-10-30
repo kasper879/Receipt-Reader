@@ -20,12 +20,15 @@ from pydantic import BaseModel, ValidationError
 from .reader import ConfigurationError, DishPhotoArea, Reader, RejectedError, TechnicalError, UnconfiguredReader, Udkast
 from .recipe_format import UNITS
 from .settings import Settings
+from .web_page import PageContent
 
 logger = logging.getLogger(__name__)
 
 TIMEOUT = anthropic.Timeout(120.0, connect=10.0)
 """Hvor længe ét forsøg må tage. Derefter prøver SDK'et én gang til, og så bliver aflæsningen ventende."""
 MAX_RETRIES = 1
+MAX_PAGE_DATA = 30_000
+"""Så meget af en sides strukturerede data sendes med. Sidens tekst er allerede begrænset af web_page."""
 
 PROMPT = """Du aflæser fotograferede opskrifter fra kogebøger, håndskrevne kort, udklip og hjemmesider til et husstandsbibliotek.
 
@@ -39,6 +42,8 @@ Svar med JSON efter skemaet. Kontrakten er:
 - Kilde er kun den kilde, originalen selv nævner, fx bogens titel eller personens navn.
 - Der er ét udkast pr. opskrift på billederne. Billeder, der fortsætter på hinanden (fx side 1 og 2 af samme opskrift), er én opskrift.
 - Er der ingen opskrift på billederne, er listen tom.
+
+Indholdet kan også være en hjemmeside som tekst og struktureret data i stedet for billeder. Så gælder den samme kontrakt.
 
 Tidsfelterne er i minutter: forberedelse er den aktive tid, total er den samlede tid.
 
@@ -136,10 +141,27 @@ class ClaudeReader:
             for image in images
         ]
         content.append({"type": "text", "text": f"Aflæs opskrifterne på de {len(images)} billeder."})
+        logger.info("Sender %d originalbilleder til %s", len(images), self.model)
+        return self._ask(content)
+
+    def read_page(self, page: PageContent) -> list[Udkast]:
+        """Læser opskriften på en hjemmeside ud fra dens strukturerede data og tekst. Der er ingen originalbilleder,
+        så et område for retbilledet giver ingen mening og ignoreres."""
+        data = json.dumps(page.recipes, ensure_ascii=False)[:MAX_PAGE_DATA] if page.recipes else "(ingen)"
+        text = (
+            f"Opskriften står på hjemmesiden {page.url}" + (f" med titlen \"{page.title}\"" if page.title else "") + ".\n\n"
+            f"Struktureret data fra siden (schema.org Recipe):\n{data}\n\n"
+            f"Sidens tekst:\n{page.text}\n\n"
+            "Læs opskriften på siden. Kilde er hjemmesidens navn eller opskriftens forfatter, som siden selv nævner dem."
+        )
+        logger.info("Sender siden %s til %s", page.url, self.model)
+        drafts = self._ask([{"type": "text", "text": text}])
+        return [draft.model_copy(update={"retbillede_omraade": None}) for draft in drafts]
+
+    def _ask(self, content: list[BetaContentBlockParam]) -> list[Udkast]:
         messages: list[BetaMessageParam] = [{"role": "user", "content": content}]
         output_config: BetaOutputConfigParam = {"effort": "medium", "format": {"type": "json_schema", "schema": SCHEMA}}
         started = time.monotonic()
-        logger.info("Sender %d originalbilleder til %s", len(images), self.model)
         try:
             response = self.client.beta.messages.create(
                 model=self.model,

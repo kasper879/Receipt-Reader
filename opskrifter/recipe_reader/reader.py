@@ -6,9 +6,12 @@ og med metriske enheder, felter, der ikke står i originalen, er null, og
 ingrediensgrupper bevares. Der er ét udkast pr. opskrift på billederne.
 """
 
-from typing import Annotated, Protocol
+from typing import TYPE_CHECKING, Annotated, Protocol
 
 from pydantic import BaseModel, Field, model_validator
+
+if TYPE_CHECKING:
+    from .web_page import PageContent
 
 
 class DraftIngredient(BaseModel):
@@ -84,7 +87,14 @@ class RejectedError(TechnicalError):
 class Reader(Protocol):
     def read(self, images: list[bytes]) -> list[Udkast]: ...
 
+    def read_page(self, page: "PageContent") -> list[Udkast]:
+        """Læser en opskrift fra en hjemmesides indhold. Samme kontrakt som for billeder."""
+        ...
+
 
 class UnconfiguredReader:
     def read(self, images: list[bytes]) -> list[Udkast]:
         raise ConfigurationError("Der er ikke sat en aflæsningstjeneste op. Angiv en API-nøgle i add-on'ens indstillinger.")
+
+    def read_page(self, page: "PageContent") -> list[Udkast]:
+        return self.read([])

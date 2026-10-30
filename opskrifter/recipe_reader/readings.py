@@ -14,12 +14,13 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 from . import images, recipe_format
 from .files import write_atomically
 from .reader import DraftIngredient, Reader, TechnicalError, Udkast
 from .recipe_format import Ingredient, IngredientGroup, Opskrift
+from .web_page import PageContent
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,7 @@ class Reading:
     id: str
     oprettet: datetime
     billeder: list[str]
+    """Originalbillederne. Tom, når opskriften hentes fra et link."""
     status: Status
     udkast: list[Draft] = field(default_factory=list)
     forsoeg: int = 0
@@ -91,6 +93,10 @@ class Reading:
     i_gang: bool = False
     """Om aflæsningen kører lige nu. Gemmes ikke, for en genstart afbryder den."""
     automatisk: bool = True
+    link: str | None = None
+    """Hjemmesiden, opskriften hentes fra, i stedet for originalbilleder."""
+    retbillede: str | None = None
+    """Sidens billede af retten, gemt i aflæsningens mappe. Det bliver retbillede, når udkastet gemmes."""
     """Om baggrundsopgaven prøver igen. Ved en ugyldig API-nøgle eller afviste billeder venter den på "prøv nu"."""
 
     def draft(self, nr: int) -> Draft:
@@ -105,10 +111,22 @@ class Reading:
         return next((nr for nr in numbers if nr > after), numbers[0] if numbers else None)
 
 
+class PageFetcher(Protocol):
+    """Henter hjemmesider og billeder fra internettet, jf. web_page.WebFetcher."""
+
+    def page(self, link: str) -> PageContent: ...
+
+    def image(self, link: str) -> bytes: ...
+
+
+DISH_PHOTO = "ret.jpg"
+
+
 class Readings:
-    def __init__(self, library_dir: Path, reader: Reader) -> None:
+    def __init__(self, library_dir: Path, reader: Reader, fetcher: PageFetcher) -> None:
         self.directory = library_dir / FOLDER
         self.reader = reader
+        self.fetcher = fetcher
         self._lock = threading.RLock()
         self._busy: set[str] = set()
         """Aflæsninger, der bliver aflæst lige nu, så den samme ikke aflæses to gange på én gang."""
@@ -128,6 +146,20 @@ class Readings:
             self._save(reading)
             self._busy.add(reading_id)
         logger.info("Aflæsning %s startet med %d %s", reading_id, len(names), "originalbillede" if len(names) == 1 else "originalbilleder")
+        self._in_background(reading)
+        return self.get(reading_id)
+
+    def start_from_link(self, link: str) -> Reading:
+        """Starter en aflæsning af en opskrift på en hjemmeside, i baggrunden. Siden hentes som en del af aflæsningen,
+        så en side, der ikke kan hentes lige nu, bliver en ventende aflæsning."""
+        now = datetime.now().replace(microsecond=0)
+        reading_id = f"{now:%Y%m%d-%H%M%S}-{secrets.token_hex(2)}"
+        (self.directory / reading_id).mkdir(parents=True)
+        reading = Reading(id=reading_id, oprettet=now, billeder=[], status="ventende", link=link)
+        with self._lock:
+            self._save(reading)
+            self._busy.add(reading_id)
+        logger.info("Aflæsning %s startet fra linket %s", reading_id, link)
         self._in_background(reading)
         return self.get(reading_id)
 
@@ -187,10 +219,9 @@ class Readings:
 
     def _perform(self, reading: Reading) -> Reading:
         """Kalder aflæseren og gemmer resultatet: udkast, eller tidspunktet for næste forsøg."""
-        images = [(self.directory / reading.id / name).read_bytes() for name in reading.billeder]
         started = time.monotonic()
         try:
-            drafts = self.reader.read(images)
+            drafts = self._read_page(reading) if reading.link else self.reader.read(self._originals(reading))
         except TechnicalError as error:
             reading.forsoeg += 1
             reading.fejl = str(error)
@@ -217,6 +248,23 @@ class Readings:
             if (self.directory / reading.id).is_dir():
                 self._save(reading)
         return reading
+
+    def _originals(self, reading: Reading) -> list[bytes]:
+        return [(self.directory / reading.id / name).read_bytes() for name in reading.billeder]
+
+    def _read_page(self, reading: Reading) -> list[Udkast]:
+        """Henter siden og dens billede af retten og læser opskriften. Et billede, der ikke kan hentes, springes over."""
+        assert reading.link
+        page = self.fetcher.page(reading.link)
+        if page.image_url and not reading.retbillede:
+            try:
+                photo = images.prepare(self.fetcher.image(page.image_url), images.DISH_PHOTO_SIZE)
+                write_atomically(self.directory / reading.id / DISH_PHOTO, photo)
+                reading.retbillede = DISH_PHOTO
+            except (TechnicalError, images.InvalidImage, KeyError) as error:
+                logger.info("Billedet af retten på %s kunne ikke hentes: %s", page.url, error)
+        logger.info("Siden %s hentet (%d tegn tekst, %d opskrifter som data)", page.url, len(page.text), len(page.recipes))
+        return self.reader.read_page(page)
 
     def list(self) -> list[Reading]:
         """Alle aflæsninger, ældste først."""
@@ -248,12 +296,17 @@ class Readings:
             naeste_forsoeg=datetime.fromisoformat(data["naeste_forsoeg"]) if data.get("naeste_forsoeg") else None,
             fejl=data.get("fejl"),
             automatisk=data.get("automatisk", True),
+            link=data.get("link"),
+            retbillede=data.get("retbillede"),
             i_gang=reading_id in self._busy,
         )
 
     def dish_photo(self, reading_id: str, nr: int, longest_side: int) -> bytes | None:
-        """Fotoet af retten fra udkastets område på originalbillederne, beskåret som JPEG. None, hvis der ikke er et."""
+        """Fotoet af retten: sidens billede ved et link, ellers udkastets område på originalbillederne,
+        beskåret som JPEG. None, hvis der ikke er et."""
         reading = self.get(reading_id)
+        if reading.retbillede:
+            return self.image(reading_id, reading.retbillede).read_bytes()
         area = reading.draft(nr).udkast.retbillede_omraade
         if area is None or area.billede > len(reading.billeder):
             return None
@@ -265,7 +318,7 @@ class Readings:
 
     def image(self, reading_id: str, name: str) -> Path:
         reading = self.get(reading_id)
-        if name not in reading.billeder:
+        if name not in reading.billeder and name != reading.retbillede:
             raise ReadingNotFound(f"{reading_id}/{name}")
         return self._folder(reading_id) / name
 
@@ -317,5 +370,7 @@ class Readings:
             "naeste_forsoeg": reading.naeste_forsoeg.isoformat() if reading.naeste_forsoeg else None,
             "fejl": reading.fejl,
             "automatisk": reading.automatisk,
+            "link": reading.link,
+            "retbillede": reading.retbillede,
         }
         write_atomically(self.directory / reading.id / STATE, json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8"))

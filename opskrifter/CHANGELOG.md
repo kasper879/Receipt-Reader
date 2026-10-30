@@ -1,5 +1,11 @@
 # Ændringer
 
+## 0.4.0
+
+- **Importér fra et link:** Indsæt et link til en opskrift på en hjemmeside under "Ny opskrift". Appen henter siden og laver et udkast på dansk med metriske enheder, også fra engelske sider. Sidens billede af retten bliver retbillede, og opskriften linker til den oprindelige side.
+- Appen henter kun sider fra internettet, aldrig adresser på hjemmenetværket.
+- En side, der ikke kan hentes lige nu, bliver en ventende aflæsning og prøves igen senere.
+
 ## 0.3.0
 
 - **Aflæsningen kører i baggrunden.** Upload svarer med det samme, og skærmen viser, hvor mange sekunder aflæsningen har kørt. Du kan forlade siden, så kommer resultatet som en note på forsiden, og noten opdaterer sig selv.

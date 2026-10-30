@@ -17,9 +17,10 @@ from pydantic import BaseModel, Field
 from . import images, reading_api, titles
 from .library import Entry, HasWarning, Library, NotFound
 from .reader import Reader, UnconfiguredReader
-from .readings import ReadingNotFound, Readings, as_recipe
+from .readings import PageFetcher, ReadingNotFound, Readings, as_recipe
 from .search_index import SearchIndex, Sorting
 from .settings import Settings
+from .web_page import WebFetcher
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -34,10 +35,15 @@ RETRY_CHECK_SECONDS = 30.0
 """Hvor ofte baggrundsopgaven ser efter ventende aflæsninger, der skal prøves igen."""
 
 
-def create_app(settings: Settings, reader: Reader | None = None, retry_check_seconds: float = RETRY_CHECK_SECONDS) -> FastAPI:
+def create_app(
+    settings: Settings,
+    reader: Reader | None = None,
+    retry_check_seconds: float = RETRY_CHECK_SECONDS,
+    fetcher: PageFetcher | None = None,
+) -> FastAPI:
     library = Library(settings.library_dir)
     index = SearchIndex(settings.index_path, library, _summary)
-    readings = Readings(settings.library_dir, reader or UnconfiguredReader())
+    readings = Readings(settings.library_dir, reader or UnconfiguredReader(), fetcher or WebFetcher())
 
     def similar_recipes(title: str | None, except_id: str | None) -> list[dict[str, Any]]:
         """Opskrifter i biblioteket med en titel, der ligner. En fil med advarsel har ingen titel at sammenligne med."""
@@ -213,6 +219,7 @@ def _details(entry: Entry) -> dict[str, Any]:
     return {
         **_common(entry),
         "portioner": opskrift.portioner,
+        "link": opskrift.link,
         "forberedelse": opskrift.forberedelse,
         "retbillede": _image_url(opskrift.retbillede),
         "originalbilleder": [_image_url(name) for name in opskrift.originalbilleder],

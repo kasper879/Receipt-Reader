@@ -82,6 +82,12 @@ function timeOf(iso) {
   return today ? `i dag kl. ${clock}` : `${formatDate(iso)} kl. ${clock}`;
 }
 
+// Det, der aflæses: originalbilleder eller en side fra et link.
+const what = (reading) =>
+  reading.link
+    ? `Opskriften fra ${new URL(reading.link).hostname}`
+    : plural(reading.originalbilleder.length, "originalbillede", "originalbilleder");
+
 // Noter om ventende aflæsninger og udkast, der ikke er gennemset endnu.
 function note(reading) {
   if (reading.i_gang) {
@@ -90,7 +96,7 @@ function note(reading) {
       { class: "note" },
       el("span", { class: "spinner inline", "aria-hidden": "true" }),
       el("b", {}, " Aflæser … "),
-      `${plural(reading.originalbilleder.length, "originalbillede", "originalbilleder")} fra ${timeOf(reading.oprettet)} bliver læst lige nu.`,
+      `${what(reading)} fra ${timeOf(reading.oprettet)} bliver læst lige nu.`,
     );
   }
   if (reading.status === "ventende") {
@@ -108,7 +114,7 @@ function note(reading) {
       "aside",
       { class: "note" },
       el("b", {}, "Ventende aflæsning. "),
-      `${plural(reading.originalbilleder.length, "originalbillede", "originalbilleder")} fra ${timeOf(reading.oprettet)} venter på at blive læst. `,
+      `${what(reading)} fra ${timeOf(reading.oprettet)} venter på at blive læst. `,
       // En ugyldig API-nøgle eller afviste billeder prøves ikke igen af sig selv. Så venter aflæsningen på brugeren.
       ...(reading.automatisk
         ? ["Det sker af sig selv, når der er forbindelse igen – eller ", action("prøv nu", retry), ". ", reading.fejl && el("span", { class: "note-reason" }, reading.fejl, " ")]

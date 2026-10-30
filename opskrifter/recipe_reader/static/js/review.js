@@ -41,6 +41,7 @@ export function showNew() {
       thumbs.length > 0 && el("div", { class: "picks" }, ...thumbs),
       el("div", { class: "pick-buttons" }, ...buttons),
       picked.length > 0 && el("button", { type: "button", class: "save", id: "read-button", onclick: read }, `Aflæs ${plural(picked.length, "billede", "billeder")}`),
+      picked.length === 0 && linkForm(),
     ]),
   );
 }
@@ -75,33 +76,67 @@ export function afterReading(reading) {
   go(href.review(reading.id, reading.udkast[0].nr));
 }
 
-async function read() {
+// Starter en aflæsning af billeder eller et link og viser, at den er i gang, til den er færdig.
+async function startReading(url, options, { sending, failure, onStarted }) {
   const view = document.getElementById("ny");
-  const body = new FormData();
-  for (const file of picked) body.append("billeder", file);
-  view.querySelectorAll("button").forEach((button) => (button.disabled = true));
-  const status = el("span", {}, "Sender billederne …");
+  view.querySelectorAll("button, input").forEach((control) => (control.disabled = true));
+  const status = el("span", {}, sending);
   view.append(el("div", { class: "reading", role: "status" }, el("span", { class: "spinner", "aria-hidden": "true" }), status));
   let response;
   try {
-    response = await fetch("api/aflaesninger", { method: "POST", body });
+    response = await fetch(url, options);
   } catch {
     response = null;
   }
-  if (!response || (!response.ok && response.status !== 202)) {
+  if (!response || response.status !== 202) {
     const detail = response && (await response.json().catch(() => null));
-    toast((detail && typeof detail.detail === "string" && detail.detail) || "Billederne kunne ikke sendes. Prøv igen.");
+    toast((detail && typeof detail.detail === "string" && detail.detail) || failure);
     showNew();
     return;
   }
-  picked = [];
+  onStarted();
   const started = await response.json();
-  status.textContent = "Aflæser opskriften … Det tager typisk et halvt til et helt minut. Du kan godt forlade siden, så kommer resultatet på forsiden.";
-  const reading = await waitForReading(started.id, (seconds) => {
-    status.textContent = `Aflæser opskriften … ${seconds} s. Du kan godt forlade siden, så kommer resultatet på forsiden.`;
-  });
+  const leave = "Du kan godt forlade siden, så kommer resultatet på forsiden.";
+  status.textContent = `Aflæser opskriften … Det tager typisk et halvt til et helt minut. ${leave}`;
+  const reading = await waitForReading(started.id, (seconds) => (status.textContent = `Aflæser opskriften … ${seconds} s. ${leave}`));
   // Har brugeren forladt siden imens, vises resultatet som en note på forsiden i stedet.
   if (currentRoute().view === "ny") afterReading(reading);
+}
+
+function read() {
+  const body = new FormData();
+  for (const file of picked) body.append("billeder", file);
+  startReading("api/aflaesninger", { method: "POST", body }, {
+    sending: "Sender billederne …",
+    failure: "Billederne kunne ikke sendes. Prøv igen.",
+    onStarted: () => (picked = []),
+  });
+}
+
+function readLink(link) {
+  startReading("api/aflaesninger/link", json("POST", { link }), {
+    sending: "Henter siden …",
+    failure: "Linket kunne ikke bruges. Prøv igen.",
+    onStarted: () => {},
+  });
+}
+
+// Et link til en opskrift på en hjemmeside, i stedet for billeder.
+function linkForm() {
+  const input = el("input", { type: "url", class: "link-input", inputmode: "url", placeholder: "https://…", "aria-label": "Link til en opskrift" });
+  const form = el(
+    "form",
+    {
+      class: "link-form",
+      onsubmit: (event) => {
+        event.preventDefault();
+        if (input.value.trim()) readLink(input.value.trim());
+      },
+    },
+    el("label", { class: "kicker" }, "Eller hent fra et link"),
+    el("div", { class: "link-row" }, input, el("button", { type: "submit", class: "secondary" }, "Hent opskrift")),
+  );
+  return form;
 }
 
 // ---------------- Gennemsyn ----------------
@@ -181,6 +216,14 @@ export async function showReview(id) {
     top: [
       ...tabs(reading, draft.nr),
       // Et foto af retten på originalbillederne bliver automatisk retbillede, når udkastet gemmes.
+      reading.link &&
+        el(
+          "p",
+          { class: "hint dish-hint" },
+          "Hentet fra ",
+          el("a", { href: reading.link, target: "_blank", rel: "noopener" }, new URL(reading.link).hostname),
+          reading.retbillede ? ". Billedet fra siden bliver opskriftens retbillede." : ".",
+        ),
       draft.retbillede_omraade &&
         el(
           "p",
@@ -197,7 +240,8 @@ export async function showReview(id) {
     el(
       "div",
       { class: "review" },
-      originalsPanel(reading.originalbilleder),
+      // Ved et link er der ingen originalbilleder. Så vises sidens billede af retten.
+      originalsPanel(reading.originalbilleder.length ? reading.originalbilleder : [reading.retbillede].filter(Boolean)),
       el("article", { class: "review-draft" }, back(), editor.element, box.element),
     ),
   );

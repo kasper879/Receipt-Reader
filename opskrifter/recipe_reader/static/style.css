@@ -243,3 +243,11 @@ a.row:hover .row-t { text-decoration: underline; text-underline-offset: 3px; }
 @media (min-width: 500px) { .pick-buttons { grid-template-columns: 1fr 1fr; } }
 .pick-buttons .secondary:first-child { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .spinner.inline { display: inline-block; width: 12px; height: 12px; vertical-align: -1px; }
+
+/* Ny opskrift: hent fra et link. */
+.link-form { display: grid; gap: 8px; margin: 8px 0 22px; padding-top: 18px; border-top: 1px solid var(--rule); }
+.link-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.link-row .secondary { width: auto; padding-inline: 16px; font-size: 15px; }
+.link-input { border: 0; border-bottom: 2px solid var(--ink); border-radius: 0; background: none; font: 17px var(--sans); padding: 8px 0; outline: none; min-width: 0; }
+.link-input:focus { border-bottom-color: var(--acc); }
+.byline a { color: inherit; font-style: normal; }

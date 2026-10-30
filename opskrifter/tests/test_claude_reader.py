@@ -16,6 +16,7 @@ import pytest
 from recipe_reader.claude_reader import ClaudeReader, reader_from_settings
 from recipe_reader.reader import ConfigurationError, RejectedError, TechnicalError, UnconfiguredReader
 from recipe_reader.settings import Settings
+from recipe_reader.web_page import PageContent
 from tests.images import jpeg
 
 API_KEY = "sk-ant-test-hemmelig-noegle"
@@ -267,3 +268,31 @@ def test_the_client_waits_at_most_two_minutes_and_retries_once(tmp_path: Any) ->
     assert isinstance(reader, ClaudeReader)
     assert reader.client.max_retries == 1
     assert reader.client.timeout.read == 120  # type: ignore[union-attr]
+
+
+def test_a_web_page_is_sent_as_text_and_gives_drafts_without_an_image_area() -> None:
+    requests: list[dict[str, Any]] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(json.loads(request.content))
+        area = {"billede": 1, "venstre": 0, "top": 0, "hoejre": 1, "bund": 1}
+        return httpx2.Response(200, json=message(json.dumps({"opskrifter": [{**BOLLER, "retbillede_omraade": area}]})))
+
+    page = PageContent(
+        url="https://madensverden.test/boller/",
+        title="Boller i karry",
+        recipes=[{"@type": "Recipe", "name": "Boller i karry", "recipeIngredient": ["2 tsk karry"]}],
+        text="Kødbollerne koges i bouillon.",
+    )
+
+    [draft] = reader_with(handler).read_page(page)
+
+    assert draft.titel == "Boller i karry"
+    assert draft.retbillede_omraade is None
+    [body] = requests
+    blocks = body["messages"][0]["content"]
+    assert [block["type"] for block in blocks] == ["text"]
+    sent = blocks[0]["text"]
+    assert "https://madensverden.test/boller/" in sent
+    assert "2 tsk karry" in sent
+    assert "Kødbollerne koges i bouillon." in sent

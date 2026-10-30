@@ -147,7 +147,12 @@ function render(recipe, portions) {
   if (recipe.advarsel) return renderWarning(recipe);
   const factor = recipe.portioner ? portions / recipe.portioner : 1;
   const byline = [
-    recipe.kilde && ["Fra ", el("i", {}, recipe.kilde)],
+    (recipe.kilde || recipe.link) && [
+      "Fra ",
+      recipe.link
+        ? el("a", { href: recipe.link, target: "_blank", rel: "noopener" }, recipe.kilde || new URL(recipe.link).hostname)
+        : el("i", {}, recipe.kilde),
+    ],
     recipe.oprettet && [`tilføjet ${formatDate(recipe.oprettet)}`],
   ].filter(Boolean);
   view().replaceChildren(

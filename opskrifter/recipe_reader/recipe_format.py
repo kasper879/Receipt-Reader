@@ -60,6 +60,8 @@ class Opskrift:
     vurdering: int | None = None
     tags: list[str] = field(default_factory=list)
     kilde: str | None = None
+    link: str | None = None
+    """Adressen på hjemmesiden, opskriften er hentet fra."""
     oprettet: date | None = None
     retbillede: str | None = None
     originalbilleder: list[str] = field(default_factory=list)
@@ -106,6 +108,7 @@ def _parse(text: str) -> Opskrift:
         vurdering=_rating(meta),
         tags=_list(meta, "tags"),
         kilde=_field(meta, "kilde", str),
+        link=_field(meta, "link", str),
         oprettet=_field(meta, "oprettet", date),
         retbillede=_field(meta, "retbillede", str),
         originalbilleder=_list(meta, "originalbilleder"),
@@ -182,7 +185,7 @@ def _quantity(match: re.Match[str]) -> Quantity:
 
 
 FIELD_ORDER = (
-    "titel", "portioner", "forberedelse", "total", "vurdering", "tags", "kilde", "oprettet", "retbillede", "originalbilleder",
+    "titel", "portioner", "forberedelse", "total", "vurdering", "tags", "kilde", "link", "oprettet", "retbillede", "originalbilleder",
 )  # fmt: skip
 
 
@@ -196,6 +199,7 @@ def write(opskrift: Opskrift) -> str:
         "vurdering": opskrift.vurdering,
         "tags": opskrift.tags or None,
         "kilde": opskrift.kilde,
+        "link": opskrift.link,
         "oprettet": opskrift.oprettet,
         "retbillede": opskrift.retbillede,
         "originalbilleder": opskrift.originalbilleder or None,
