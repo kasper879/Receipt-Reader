@@ -23,12 +23,15 @@ def ha(handler: Callable[[httpx2.Request], httpx2.Response]) -> HomeAssistantSho
     return HomeAssistantShoppingList(BASE, TOKEN, "todo.indkobsliste", client=httpx2.Client(transport=httpx2.MockTransport(handler)))
 
 
-def home_assistant(requests: list[httpx2.Request], *, list_exists: bool = True) -> Callable[[httpx2.Request], httpx2.Response]:
+def home_assistant(
+    requests: list[httpx2.Request], *, list_exists: bool = True, supported_features: int = 127, add_status: int = 200
+) -> Callable[[httpx2.Request], httpx2.Response]:
     def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
         if request.method == "GET":
-            return httpx2.Response(200, json={"entity_id": "todo.indkobsliste", "state": "3"}) if list_exists else httpx2.Response(404, json={"message": "Entity not found."})
-        return httpx2.Response(200, json=[])
+            state = {"entity_id": "todo.indkobsliste", "state": "3", "attributes": {"supported_features": supported_features}}
+            return httpx2.Response(200, json=state) if list_exists else httpx2.Response(404, json={"message": "Entity not found."})
+        return httpx2.Response(add_status, json=[] if add_status == 200 else {"message": "Entity does not support setting field 'description'"})
 
     return handler
 
@@ -46,6 +49,26 @@ def test_each_ingredient_becomes_an_item_with_the_recipe_as_description() -> Non
         {"entity_id": "todo.indkobsliste", "item": "2 spsk karry", "description": "Til Boller i karry"},
     ]
     assert all(request.headers["authorization"] == f"Bearer {TOKEN}" for request in requests)
+
+
+def test_a_list_that_cannot_store_descriptions_gets_the_items_without() -> None:
+    requests: list[httpx2.Request] = []
+
+    # Den indbyggede Indkøbsliste: opret, slet, opdatér og flyt, men ingen beskrivelse.
+    ha(home_assistant(requests, supported_features=15)).add(["2 spsk karry"], "Til Boller i karry")
+
+    assert json.loads(requests[1].content) == {"entity_id": "todo.indkobsliste", "item": "2 spsk karry"}
+
+
+def test_an_item_home_assistant_rejects_is_not_reported_as_a_missing_list(caplog: pytest.LogCaptureFixture) -> None:
+    requests: list[httpx2.Request] = []
+
+    with pytest.raises(ShoppingListError) as raised:
+        ha(home_assistant(requests, add_status=400)).add(["2 spsk karry"], None)
+
+    assert "findes ikke" not in str(raised.value)
+    assert "400" in str(raised.value)
+    assert "does not support" in caplog.text
 
 
 def test_a_list_that_does_not_exist_gives_a_clear_message_and_adds_nothing() -> None:

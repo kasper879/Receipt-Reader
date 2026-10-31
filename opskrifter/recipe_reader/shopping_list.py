@@ -16,6 +16,8 @@ from .settings import Settings
 logger = logging.getLogger(__name__)
 
 TIMEOUT = httpx2.Timeout(10.0)
+SET_DESCRIPTION_ON_ITEM = 64
+"""TodoListEntityFeature.SET_DESCRIPTION_ON_ITEM i Home Assistant: listen kan gemme en beskrivelse på en vare."""
 
 
 class ShoppingListError(Exception):
@@ -55,13 +57,16 @@ class HomeAssistantShoppingList:
 
     def add(self, items: list[str], description: str | None) -> None:
         """Lægger hver vare på listen. Listen kontrolleres først, så varer ikke forsvinder i en liste, der ikke findes."""
-        self._request("GET", f"/states/{quote(self.entity_id)}")
+        state = self._request("GET", f"/states/{quote(self.entity_id)}")
+        # Fx den indbyggede Indkøbsliste kan ikke gemme en beskrivelse og afviser varen, hvis den sendes med.
+        if not _supported_features(state) & SET_DESCRIPTION_ON_ITEM:
+            description = None
         for item in items:
             body = {"entity_id": self.entity_id, "item": item, **({"description": description} if description else {})}
             self._request("POST", "/services/todo/add_item", body)
         logger.info("%d varer lagt på indkøbslisten %s", len(items), self.entity_id)
 
-    def _request(self, method: str, path: str, body: dict[str, str] | None = None) -> None:
+    def _request(self, method: str, path: str, body: dict[str, str] | None = None) -> httpx2.Response:
         try:
             response = self._client.request(method, f"{self.base_url}{path}", headers=self._headers, json=body)
         except httpx2.TransportError as error:
@@ -69,13 +74,21 @@ class HomeAssistantShoppingList:
             raise ShoppingListError("Home Assistant svarer ikke lige nu. Prøv igen om lidt.") from error
         if response.status_code in (401, 403):
             raise ShoppingListError("Appen har ikke adgang til Home Assistant. Genstart add-on'en, og prøv igen.")
-        if response.status_code == 404 or response.status_code == 400:
+        if response.status_code == 404:
             raise ShoppingListError(
                 f"Indkøbslisten {self.entity_id} findes ikke i Home Assistant. Ret indstillingen indkoebsliste i add-on'en."
             )
         if response.status_code >= 300:
-            logger.warning("Home Assistant svarede %s på %s %s", response.status_code, method, path)
-            raise ShoppingListError(f"Home Assistant svarede med fejl {response.status_code}. Prøv igen om lidt.")
+            logger.warning("Home Assistant svarede %s på %s %s: %s", response.status_code, method, path, response.text[:500])
+            raise ShoppingListError(f"Home Assistant afviste varerne med fejl {response.status_code}. Se add-on'ens log.")
+        return response
+
+
+def _supported_features(response: httpx2.Response) -> int:
+    try:
+        return int(response.json().get("attributes", {}).get("supported_features", 0))
+    except (ValueError, TypeError, AttributeError):
+        return 0
 
 
 def shopping_list_from_settings(settings: Settings) -> ShoppingList:

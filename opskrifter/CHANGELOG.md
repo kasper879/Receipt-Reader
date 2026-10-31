@@ -1,5 +1,10 @@
 # Ændringer
 
+## 0.5.2
+
+- Til indkøbslisten virker nu også med den indbyggede Indkøbsliste i Home Assistant. Opskriftens navn sendes kun med som beskrivelse, når listen kan gemme beskrivelser.
+- En vare, Home Assistant afviser, bliver ikke længere forklaret som en liste, der ikke findes. Home Assistants begrundelse står i add-on'ens log.
+
 ## 0.5.1
 
 - Fejl fra indkøbslisten vises nu med en forklaring, fx at listen ikke findes i Home Assistant. Før stod der kun "Varerne kunne ikke lægges på indkøbslisten."
