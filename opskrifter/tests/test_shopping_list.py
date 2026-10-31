@@ -148,7 +148,7 @@ def test_an_error_from_home_assistant_is_shown(shop_client: TestClient, shopping
 
     response = shop_client.post("api/opskrifter/kage/indkoebsliste", json={"varer": ["3 æg"]})
 
-    assert response.status_code == 502
+    assert response.status_code == 409
     assert response.json()["detail"] == "Indkøbslisten todo.x findes ikke."
 
 
@@ -158,5 +158,5 @@ def test_nothing_to_add_or_no_shopping_list_is_rejected(shop_client: TestClient,
     assert shop_client.post("api/opskrifter/kage/indkoebsliste", json={"varer": [" "]}).status_code == 422
     assert shop_client.post("api/opskrifter/findes-ikke/indkoebsliste", json={"varer": ["æg"]}).status_code == 404
     shopping.available = False
-    assert shop_client.post("api/opskrifter/kage/indkoebsliste", json={"varer": ["æg"]}).status_code == 503
+    assert shop_client.post("api/opskrifter/kage/indkoebsliste", json={"varer": ["æg"]}).status_code == 409
     assert shopping.added == []

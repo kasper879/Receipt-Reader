@@ -1,5 +1,5 @@
 name: Opskrifter
-version: "0.5.0"
+version: "0.5.1"
 slug: opskrifter
 description: Husstandens opskriftsbibliotek som Markdown-filer, med aflæsning af fotograferede opskrifter.
 arch:

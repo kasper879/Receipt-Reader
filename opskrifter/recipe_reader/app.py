@@ -124,12 +124,13 @@ def create_app(
         items = [" ".join(item.split()) for item in body.varer if item.strip()]
         if not items:
             raise HTTPException(status_code=422, detail="Vælg mindst én ingrediens.")
+        # Fejl svares med 409, ikke 5xx: Home Assistants ingress erstatter indholdet af 5xx-svar, så beskeden ikke når frem.
         if not shopping.available:
-            raise HTTPException(status_code=503, detail="Indkøbslisten kræver, at appen kører i Home Assistant.")
+            raise HTTPException(status_code=409, detail="Indkøbslisten kræver, at appen kører i Home Assistant.")
         try:
             shopping.add(items, f"Til {opskrift.titel or recipe_id}")
         except ShoppingListError as error:
-            raise HTTPException(status_code=502, detail=str(error)) from error
+            raise HTTPException(status_code=409, detail=str(error)) from error
         return {"antal": len(items)}
 
     @app.put("/api/opskrifter/{recipe_id}/vurdering")

@@ -1,5 +1,9 @@
 # Ændringer
 
+## 0.5.1
+
+- Fejl fra indkøbslisten vises nu med en forklaring, fx at listen ikke findes i Home Assistant. Før stod der kun "Varerne kunne ikke lægges på indkøbslisten."
+
 ## 0.5.0
 
 - **Til indkøbslisten:** Under ingredienserne i en opskrift lægger "🛒 Til indkøbslisten" ingredienserne på jeres indkøbsliste i Home Assistant, omregnet til de valgte portioner. Fjern fluebenet ved det, du har i forvejen. Ingredienser uden mængde, fx salt og peber, er fravalgt fra start.
