@@ -6,7 +6,7 @@ ingen indkøbsliste, og frontenden skjuler knappen.
 """
 
 import logging
-from typing import Protocol
+from typing import NamedTuple, Protocol
 from urllib.parse import quote
 
 import httpx2
@@ -24,11 +24,17 @@ class ShoppingListError(Exception):
     """Varerne kunne ikke lægges på listen. Beskeden kan vises for brugeren."""
 
 
+class ShoppingItem(NamedTuple):
+    tekst: str
+    beskrivelse: str | None = None
+    """Fx "Til Boller i karry". Sendes kun med, når listen kan gemme en beskrivelse."""
+
+
 class ShoppingList(Protocol):
     available: bool
     entity_id: str
 
-    def add(self, items: list[str], description: str | None) -> None: ...
+    def add(self, items: list[ShoppingItem]) -> None: ...
 
 
 class NoShoppingList:
@@ -39,7 +45,7 @@ class NoShoppingList:
     def __init__(self, entity_id: str) -> None:
         self.entity_id = entity_id
 
-    def add(self, items: list[str], description: str | None) -> None:
+    def add(self, items: list[ShoppingItem]) -> None:
         raise ShoppingListError("Indkøbslisten kræver, at appen kører i Home Assistant.")
 
 
@@ -55,14 +61,14 @@ class HomeAssistantShoppingList:
     def __repr__(self) -> str:
         return f"HomeAssistantShoppingList(entity_id={self.entity_id!r})"
 
-    def add(self, items: list[str], description: str | None) -> None:
+    def add(self, items: list[ShoppingItem]) -> None:
         """Lægger hver vare på listen. Listen kontrolleres først, så varer ikke forsvinder i en liste, der ikke findes."""
         state = self._request("GET", f"/states/{quote(self.entity_id)}")
         # Fx den indbyggede Indkøbsliste kan ikke gemme en beskrivelse og afviser varen, hvis den sendes med.
-        if not _supported_features(state) & SET_DESCRIPTION_ON_ITEM:
-            description = None
+        with_description = bool(_supported_features(state) & SET_DESCRIPTION_ON_ITEM)
         for item in items:
-            body = {"entity_id": self.entity_id, "item": item, **({"description": description} if description else {})}
+            description = item.beskrivelse if with_description else None
+            body = {"entity_id": self.entity_id, "item": item.tekst, **({"description": description} if description else {})}
             self._request("POST", "/services/todo/add_item", body)
         logger.info("%d varer lagt på indkøbslisten %s", len(items), self.entity_id)
 

@@ -1,5 +1,12 @@
 # Ændringer
 
+## 0.6.0
+
+- **Indkøbskurv:** "🛒 Læg i indkøbskurven" på en opskrift lægger de valgte ingredienser i en fælles kurv i stedet for direkte på listen. Kurven samler flere opskrifter og lægger ens ingredienser sammen, fx 2 spsk + 1 spsk karry = 3 spsk karry. Ingredienser i forskellige enheder står på hver sin linje.
+- Kurven findes på forsiden og viser, hvilke opskrifter hver vare er til. Fjern fluebenet ved det, I har i forvejen, og send det hele til indkøbslisten i Home Assistant på én gang. Så tømmes kurven.
+- En opskrift kan fjernes fra kurven igen. Kurven er fælles for husstanden og overlever en genstart.
+- Ingredienser under "Fra eget køkken" er fravalgt fra start.
+
 ## 0.5.2
 
 - Til indkøbslisten virker nu også med den indbyggede Indkøbsliste i Home Assistant. Opskriftens navn sendes kun med som beskrivelse, når listen kan gemme beskrivelser.

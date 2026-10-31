@@ -261,3 +261,8 @@ a.row:hover .row-t { text-decoration: underline; text-underline-offset: 3px; }
 .shop-line input { width: 18px; height: 18px; margin-top: 1px; accent-color: var(--acc); flex: none; }
 .shop-actions { display: grid; gap: 8px; margin-top: 12px; }
 .shop-actions .save { font-size: 17px; padding: 14px 16px; }
+.shop-basket { display: inline-block; margin-top: 10px; color: var(--acc); font-size: 15px; }
+.shop-line span { display: grid; gap: 2px; }
+.shop-for { color: var(--sub); font-size: 13px; }
+.basket-link { display: block; margin: 12px 0 0; color: var(--acc); font-size: 16px; font-weight: 600; text-decoration: none; }
+.basket-recipes { margin-bottom: 24px; }

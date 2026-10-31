@@ -1,6 +1,6 @@
 // Opskriftsvisningen: hele opskriften på én side i kogebogsopsætningen, uden faner.
 import { action, el, joined, json, pickImages, present, send, toast } from "./dom.js";
-import { amount, duration, formatDate } from "./format.js";
+import { amount, duration, formatDate, plural } from "./format.js";
 import { currentRoute, go, href } from "./routes.js";
 import { openViewer } from "./viewer.js";
 
@@ -13,7 +13,7 @@ const missing = () => el("b", { class: "nil" }, "—");
 
 const fact = (label, value) => el("div", {}, el("span", {}, label), value);
 
-function ingredients(recipe, factor) {
+function ingredients(recipe, portions, factor) {
   return el(
     "aside",
     { class: "ings" },
@@ -29,49 +29,54 @@ function ingredients(recipe, factor) {
         }),
       ),
     ]),
-    recipe.ingredienser.length > 0 && shoppingButton(recipe, factor),
+    recipe.ingredienser.length > 0 && shoppingButton(recipe, portions, factor),
   );
 }
 
-// ---------------- Indkøbslisten ----------------
+// ---------------- Indkøbskurven ----------------
 
 let shoppingStatus = null;
 
-// Om der er en indkøbsliste i Home Assistant. Spørges kun én gang.
-function shoppingAvailable() {
+// Om der er en indkøbsliste i Home Assistant. Spørges kun én gang. Uden den er der heller ingen kurv.
+export function shoppingAvailable() {
   shoppingStatus ??= fetch("api/indkoebsliste")
     .then((response) => (response.ok ? response.json() : null))
     .then((status) => Boolean(status && status.tilgaengelig), () => false);
   return shoppingStatus;
 }
 
-const shoppingItem = (line, factor) => [amount(line, factor), line.navn].filter(Boolean).join(" ");
+// Ting som vand, olie og salt under "Fra eget køkken" har husstanden som regel i forvejen.
+const fromOwnKitchen = (group) => /eget køkken/i.test(group.gruppe || "");
 
-// Ingredienserne med flueben, omregnet til de valgte portioner. Ingredienser uden mængde, fx "salt og peber", er fravalgt fra start.
-function shoppingPanel(recipe, factor, close) {
-  const boxes = [];
+// Ingredienserne med flueben, omregnet til de valgte portioner. Ingredienser uden mængde, fx "salt og peber",
+// og ingredienser fra eget køkken er fravalgt fra start.
+function shoppingPanel(recipe, portions, factor, close) {
+  const chosen = [];
   const submit = el("button", { type: "submit", class: "save" });
   const update = () => {
-    const count = boxes.filter((box) => box.checked).length;
-    submit.textContent = count ? `Læg ${count} ${count === 1 ? "vare" : "varer"} på listen` : "Vælg ingredienser";
+    const count = chosen.filter(({ box }) => box.checked).length;
+    submit.textContent = count ? `Læg ${plural(count, "vare", "varer")} i kurven` : "Vælg ingredienser";
     submit.disabled = count === 0;
   };
   const groups = recipe.ingredienser.flatMap((group) => [
     group.gruppe && el("h3", {}, group.gruppe),
     ...group.linjer.map((line) => {
-      const box = el("input", { type: "checkbox", value: shoppingItem(line, factor), onchange: update });
-      box.checked = line.maengde != null;
-      boxes.push(box);
-      return el("label", { class: "shop-line" }, box, " ", box.value);
+      const box = el("input", { type: "checkbox", onchange: update });
+      box.checked = line.maengde != null && !fromOwnKitchen(group);
+      chosen.push({ box, line });
+      return el("label", { class: "shop-line" }, box, " ", [amount(line, factor), line.navn].filter(Boolean).join(" "));
     }),
   ]);
   const add = async (event) => {
     event.preventDefault();
     submit.disabled = true;
-    const varer = boxes.filter((box) => box.checked).map((box) => box.value);
-    const result = await send(`${recipeUrl(recipe.id)}/indkoebsliste`, json("POST", { varer }), "Varerne kunne ikke lægges på indkøbslisten.");
-    if (result) {
-      toast(`${result.antal} ${result.antal === 1 ? "vare er" : "varer er"} lagt på indkøbslisten.`);
+    const varer = chosen
+      .filter(({ box }) => box.checked)
+      .map(({ line }) => ({ maengde: line.maengde == null ? null : line.maengde * factor, enhed: line.enhed, navn: line.navn }));
+    const body = { portioner: recipe.portioner ? portions : null, varer };
+    const basket = await send(`api/indkoebskurv/opskrifter/${encodeURIComponent(recipe.id)}`, json("PUT", body), "Varerne kunne ikke lægges i kurven.");
+    if (basket) {
+      toast(`„${recipe.titel}“ ligger i kurven. Der er ${plural(basket.linjer.length, "vare", "varer")} i alt.`);
       close();
     } else update();
   };
@@ -79,16 +84,20 @@ function shoppingPanel(recipe, factor, close) {
   return el(
     "form",
     { class: "shop-panel", onsubmit: add },
-    el("p", { class: "hint" }, "Vælg det, du skal købe. Mængderne passer til de valgte portioner."),
+    el("p", { class: "hint" }, "Vælg det, du skal købe. Mængderne passer til de valgte portioner. Ligger opskriften allerede i kurven, erstattes den."),
     ...present(groups),
     el("div", { class: "shop-actions" }, submit, el("button", { type: "button", class: "secondary", onclick: close }, "Annullér")),
   );
 }
 
-function shoppingButton(recipe, factor) {
+function shoppingButton(recipe, portions, factor) {
   const slot = el("div", { class: "shop" });
-  const closed = () => slot.replaceChildren(el("button", { type: "button", class: "secondary", onclick: opened }, "🛒 Til indkøbslisten"));
-  const opened = () => slot.replaceChildren(shoppingPanel(recipe, factor, closed));
+  const closed = () =>
+    slot.replaceChildren(
+      el("button", { type: "button", class: "secondary", onclick: opened }, "🛒 Læg i indkøbskurven"),
+      el("a", { class: "shop-basket", href: href.basket }, "Se kurven →"),
+    );
+  const opened = () => slot.replaceChildren(shoppingPanel(recipe, portions, factor, closed));
   shoppingAvailable().then((available) => available && closed());
   return slot;
 }
@@ -231,7 +240,7 @@ function render(recipe, portions) {
         fact("Forberedelse", recipe.forberedelse ? el("b", {}, duration(recipe.forberedelse)) : missing()),
         fact("I alt", recipe.total ? el("b", {}, duration(recipe.total)) : missing()),
       ),
-      el("div", { class: "body" }, ingredients(recipe, factor), steps(recipe)),
+      el("div", { class: "body" }, ingredients(recipe, portions, factor), steps(recipe)),
       tools(recipe, portions),
     ]),
   );

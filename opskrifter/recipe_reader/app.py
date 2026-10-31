@@ -15,12 +15,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import images, reading_api, titles
+from .basket import Basket, BasketRecipe, combine
 from .library import Entry, HasWarning, Library, NotFound
 from .reader import Reader, UnconfiguredReader
 from .readings import PageFetcher, ReadingNotFound, Readings, as_recipe
 from .search_index import SearchIndex, Sorting
 from .settings import Settings
-from .shopping_list import ShoppingList, ShoppingListError, shopping_list_from_settings
+from .recipe_format import Ingredient
+from .shopping_list import ShoppingItem, ShoppingList, ShoppingListError, shopping_list_from_settings
 from .web_page import WebFetcher
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -28,8 +30,21 @@ STATIC_DIR = Path(__file__).parent / "static"
 logger = logging.getLogger(__name__)
 
 
-class ShoppingBody(BaseModel):
-    varer: list[str]
+class BasketItemBody(BaseModel):
+    maengde: float | None = None
+    """Omregnet til de valgte portioner."""
+    enhed: str | None = None
+    navn: str
+
+
+class BasketBody(BaseModel):
+    portioner: int | None = None
+    varer: list[BasketItemBody]
+
+
+class SendBody(BaseModel):
+    noegler: list[str]
+    """De varer i kurven, der skal på listen. Resten har husstanden i forvejen."""
 
 
 class RatingBody(BaseModel):
@@ -51,6 +66,7 @@ def create_app(
     index = SearchIndex(settings.index_path, library, _summary)
     readings = Readings(settings.library_dir, reader or UnconfiguredReader(), fetcher or WebFetcher())
     shopping = shopping_list or shopping_list_from_settings(settings)
+    basket = Basket(settings.library_dir)
 
     def similar_recipes(title: str | None, except_id: str | None) -> list[dict[str, Any]]:
         """Opskrifter i biblioteket med en titel, der ligner. En fil med advarsel har ingen titel at sammenligne med."""
@@ -117,21 +133,62 @@ def create_app(
         """Om der er en indkøbsliste i Home Assistant. Ellers skjuler frontenden knappen."""
         return {"tilgaengelig": shopping.available, "liste": shopping.entity_id}
 
-    @app.post("/api/opskrifter/{recipe_id}/indkoebsliste")
-    def add_to_shopping_list(recipe_id: str, body: ShoppingBody) -> dict[str, int]:
-        """Lægger varerne på indkøbslisten. Frontenden sender dem omregnet til de valgte portioner."""
+    def _basket() -> dict[str, Any]:
+        recipes = basket.recipes()
+        return {
+            "opskrifter": [{"id": r.id, "titel": r.titel, "portioner": r.portioner, "antal": len(r.varer)} for r in recipes],
+            "linjer": [
+                {"noegle": line.noegle, "tekst": line.tekst, "har_maengde": line.maengde is not None, "opskrifter": line.opskrifter}
+                for line in combine(recipes)
+            ],
+        }
+
+    @app.get("/api/indkoebskurv")
+    def get_basket() -> dict[str, Any]:
+        return _basket()
+
+    @app.put("/api/indkoebskurv/opskrifter/{recipe_id}")
+    def put_in_basket(recipe_id: str, body: BasketBody) -> dict[str, Any]:
+        """Lægger opskriftens valgte ingredienser i kurven. Frontenden sender dem omregnet til de valgte portioner."""
         opskrift = _get(recipe_id).opskrift
-        items = [" ".join(item.split()) for item in body.varer if item.strip()]
-        if not items:
+        varer = [
+            Ingredient(item.maengde, (item.enhed or "").strip() or None, " ".join(item.navn.split()))
+            for item in body.varer
+            if item.navn.strip()
+        ]
+        if not varer:
             raise HTTPException(status_code=422, detail="Vælg mindst én ingrediens.")
+        basket.put(BasketRecipe(recipe_id, opskrift.titel or recipe_id, body.portioner, varer))
+        return _basket()
+
+    @app.delete("/api/indkoebskurv/opskrifter/{recipe_id}")
+    def remove_from_basket(recipe_id: str) -> dict[str, Any]:
+        basket.remove([recipe_id])
+        return _basket()
+
+    @app.delete("/api/indkoebskurv")
+    def empty_basket() -> dict[str, Any]:
+        basket.remove([recipe.id for recipe in basket.recipes()])
+        return _basket()
+
+    @app.post("/api/indkoebskurv/send")
+    def send_basket(body: SendBody) -> dict[str, int]:
+        """Lægger de valgte varer på indkøbslisten og tømmer kurven. Fejler det, bliver kurven liggende."""
+        recipes = basket.recipes()
+        chosen = set(body.noegler)
+        lines = [line for line in combine(recipes) if line.noegle in chosen]
+        if not lines:
+            raise HTTPException(status_code=422, detail="Vælg mindst én vare.")
         # Fejl svares med 409, ikke 5xx: Home Assistants ingress erstatter indholdet af 5xx-svar, så beskeden ikke når frem.
         if not shopping.available:
             raise HTTPException(status_code=409, detail="Indkøbslisten kræver, at appen kører i Home Assistant.")
         try:
-            shopping.add(items, f"Til {opskrift.titel or recipe_id}")
+            shopping.add([ShoppingItem(line.tekst, f"Til {', '.join(line.opskrifter)}") for line in lines])
         except ShoppingListError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
-        return {"antal": len(items)}
+        # Kun de opskrifter, der blev sendt. En opskrift, der er lagt i kurven imens, bliver liggende.
+        basket.remove([recipe.id for recipe in recipes])
+        return {"antal": len(lines)}
 
     @app.put("/api/opskrifter/{recipe_id}/vurdering")
     def set_rating(recipe_id: str, body: RatingBody) -> dict[str, Any]:

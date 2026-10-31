@@ -4,6 +4,7 @@ export const href = {
   library: "#",
   recipe: (id) => `#opskrift/${encodeURIComponent(id)}`,
   trash: "#papirkurv",
+  basket: "#indkoebskurv",
   newRecipe: "#ny",
   review: (readingId, nr) => `#gennemsyn/${encodeURIComponent(readingId)}/${nr}`,
   edit: (id) => `#rediger/${encodeURIComponent(id)}`,
